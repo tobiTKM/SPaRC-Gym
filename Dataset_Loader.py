@@ -68,11 +68,13 @@ def process_puzzles(df):
                         combined = f"{value}_{properties.get('polyshape', '')}_{properties.get('color', '')}"
                     unique_properties.add(combined)
                     
+                elif key == 'dot':
+                    combined = 'dot'
                 # Add new property to obs_array if not already present
                 if combined not in obs_array:
                     obs_array.update({combined: np.zeros((y_size, x_size), dtype=int)})
         
-        unique_property_count = len(unique_properties)
+        unique_property_count = len(unique_properties) + 4  # Adding 4 for the base properties
         puzzle.update({'unique_properties': unique_property_count})
         
         # Populate observation arrays
@@ -102,12 +104,6 @@ def process_puzzles(df):
     return puzzles
 
 # Example usage
-splits = {'train': 'puzzle_all_train.jsonl', 'test': 'puzzle_all_test.jsonl'}
-df = pd.read_json("hf://datasets/lkaesberg/SPaRC/" + splits["train"], lines=True)
-puzzles = process_puzzles(df)
-temp = puzzles[0]
-print(temp['solution_paths'])
-print(temp)
+#splits = {'train': 'puzzle_all_train.jsonl', 'test': 'puzzle_all_test.jsonl'}
+#df = pd.read_json("hf://datasets/lkaesberg/SPaRC/" + splits["train"], lines=True)
 
-# TODO:
-# and then modify the gym functions to use the obs_array correctly

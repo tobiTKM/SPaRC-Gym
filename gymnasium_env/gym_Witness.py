@@ -6,12 +6,6 @@ import numpy as np
 import pandas as pd
 import yaml
 
-splits = {'train': 'puzzle_all_train.jsonl', 'test': 'puzzle_all_test.jsonl'}
-df = pd.read_json("hf://datasets/lkaesberg/SPaRC/" + splits["train"], lines=True)
-
-from Dataset_Loader import process_puzzles
-puzzles = process_puzzles(df)
-
 class Actions(Enum):
     right = 0
     up = 1
@@ -47,7 +41,7 @@ class WitnessEnv(gym.Env):
         y_size : int
             The y size of the puzzle
             
-        obs_array : dictionary of 2D one-hot encoded np.arrays
+        obs_array : 3D array
             The observation array of the puzzle
             
         unique_properties : int
@@ -86,18 +80,31 @@ class WitnessEnv(gym.Env):
         self._agent_location = np.array([self.start_location[0], self.start_location[1]], dtype=np.int32)
         self._target_location = np.array([self.target_location[0], self.target_location[1]], dtype=np.int32)
         
+        # Turn it into a 3D array
+        keys = self.obs_array.keys()
+        # Guarantee that the first 4 keys are always the same
+        feature_names = ['visited', 'gaps', 'agent_location', 'target_location']
+        for key in keys:
+            if key not in feature_names:
+                feature_names.append(key)
+
+        if len(feature_names) != self.unique_properties:
+            raise ValueError(f"Number of unique properties does not match the number of features in the observation array. Found {len(feature_names)} features, expected {self.unique_properties}.")
+        
+        self.obs_array = np.stack([self.obs_array[name] for name in feature_names], axis=0)
+        
         # Mark the starting location as visited and set the agent's and target's positions in the observation array
-        self.obs_array['visited'][self._agent_location[0], self._agent_location[1]] = 1
-        self.obs_array['agent_location'][self._agent_location[0], self._agent_location[1]] = 1
-        self.obs_array['target_location'][self._target_location[0], self._target_location[1]] = 1
+        self.obs_array[0][self._agent_location[0], self._agent_location[1]] = 1.0
+        self.obs_array[2][self._agent_location[0], self._agent_location[1]] = 1.0
+        self.obs_array[3][self._target_location[0], self._target_location[1]] = 1.0
         
         # Define the observation space for the environment
         # Shape: (number of unique properties, grid width, grid height)
         self.observation_space = spaces.Box(
-            low=0,
-            high=1,
+            low=0.0,
+            high=1.0,
             shape=(self.unique_properties, self.x_size, self.y_size),
-            dtype=np.int32,
+            dtype=np.float32,
         )
         
         # Define the action space (4 discrete actions: right, up, left, down)
@@ -115,6 +122,9 @@ class WitnessEnv(gym.Env):
         # Just returns the current observation array, that always gets updated immediately
         return self.obs_array
              
+    def _get_info(self):
+        # Empty for now, but can be used to return extra information about the environment
+        return {}
     
     def reset(self):
         # Move to the next puzzle
@@ -124,7 +134,7 @@ class WitnessEnv(gym.Env):
         self._load_puzzle(self.current_puzzle_index)
         
         # Return the initial observation for the new puzzle
-        return self._get_obs()
+        return self._get_obs(), self._get_info()
     
     
     def step(self, action):
@@ -134,14 +144,14 @@ class WitnessEnv(gym.Env):
         # np.clip to make sure we don't go out of bounds
         agent_location_temp = np.clip(self._agent_location + direction, 0, max(self.x_size, self.y_size) - 1)
         
-        if self.obs_array['visited'][agent_location_temp[0], agent_location_temp[1]] == 0 and self.obs_array['gaps'][agent_location_temp[0], agent_location_temp[1]] == 0:
+        if self.obs_array[0][agent_location_temp[0], agent_location_temp[1]] == 0.0 and self.obs_array[1][agent_location_temp[0], agent_location_temp[1]] == 0.0:
             # If the next location is not a gap or already visited Cell
-            self.obs_array['agent_location'][self._agent_location[0], self._agent_location[1]] = 0
+            self.obs_array[2][self._agent_location[0], self._agent_location[1]] = 0.0
             self._agent_location = agent_location_temp
             
             # Update the agent's location in the observation
-            self.obs_array['visited'][self._agent_location[0], self._agent_location[1]] = 1
-            self.obs_array['agent_location'][self._agent_location[0], self._agent_location[1]] = 1
+            self.obs_array[0][self._agent_location[0], self._agent_location[1]] = 1.0
+            self.obs_array[2][self._agent_location[0], self._agent_location[1]] = 1.0
             
             # Update the path 
             self.path.append(self._agent_location)
@@ -168,5 +178,13 @@ class WitnessEnv(gym.Env):
             
         # Update the observation
         observation = self._get_obs()
+        info = self._get_info()
+        # If the episode fails for reasons other than reaching the target or failing; Right now not used yet
+        truncated = False
 
-        return observation, reward, terminated
+        return observation, reward, terminated, info, truncated
+    
+
+# Idea: What is better: To disaalwo moves after the action or straight up not giving them the option?
+# Idea: Maybe also add an Info fucntion on top with extra information
+# need to add gaps
