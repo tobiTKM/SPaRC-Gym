@@ -70,6 +70,7 @@ def process_puzzles(df):
                     
                 elif key == 'dot':
                     combined = 'dot'
+                    unique_properties.add(combined)
                 # Add new property to obs_array if not already present
                 if combined not in obs_array:
                     obs_array.update({combined: np.zeros((y_size, x_size), dtype=int)})
@@ -106,4 +107,3 @@ def process_puzzles(df):
 # Example usage
 #splits = {'train': 'puzzle_all_train.jsonl', 'test': 'puzzle_all_test.jsonl'}
 #df = pd.read_json("hf://datasets/lkaesberg/SPaRC/" + splits["train"], lines=True)
-

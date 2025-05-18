@@ -18,6 +18,8 @@ class WitnessEnv(gym.Env):
         # Load the puzzles
         self.puzzles = puzzles if puzzles is not None else ValueError("No puzzles provided")
         self.current_puzzle_index = 0
+        self.max_steps = 2000
+        self.current_step = 0
         
         # Load the first puzzle
         self._load_puzzle(self.current_puzzle_index) 
@@ -77,8 +79,8 @@ class WitnessEnv(gym.Env):
         # Initialize the agent's path with the starting location
         self.path = [self.start_location]
         
-        self._agent_location = np.array([self.start_location[0], self.start_location[1]], dtype=np.int32)
-        self._target_location = np.array([self.target_location[0], self.target_location[1]], dtype=np.int32)
+        self._agent_location = np.array([self.start_location[1], self.start_location[0]], dtype=np.int32)
+        self._target_location = np.array([self.target_location[1], self.target_location[0]], dtype=np.int32)
         
         # Turn it into a 3D array
         keys = self.obs_array.keys()
@@ -94,9 +96,9 @@ class WitnessEnv(gym.Env):
         self.obs_array = np.stack([self.obs_array[name] for name in feature_names], axis=0)
         
         # Mark the starting location as visited and set the agent's and target's positions in the observation array
-        self.obs_array[0][self._agent_location[0], self._agent_location[1]] = 1.0
-        self.obs_array[2][self._agent_location[0], self._agent_location[1]] = 1.0
-        self.obs_array[3][self._target_location[0], self._target_location[1]] = 1.0
+        self.obs_array[0][self._agent_location[0]][self._agent_location[1]] = 1.0
+        self.obs_array[2][self._agent_location[0]][self._agent_location[1]] = 1.0
+        self.obs_array[3][self._target_location[0]][self._target_location[1]] = 1.0
         
         # Define the observation space for the environment
         # Shape: (number of unique properties, grid width, grid height)
@@ -126,9 +128,13 @@ class WitnessEnv(gym.Env):
         # Empty for now, but can be used to return extra information about the environment
         return {}
     
-    def reset(self):
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        
         # Move to the next puzzle
         self.current_puzzle_index = (self.current_puzzle_index + 1) % len(self.puzzles)
+        
+        self.current_step = 0
         
         # Load the next puzzle
         self._load_puzzle(self.current_puzzle_index)
@@ -139,19 +145,22 @@ class WitnessEnv(gym.Env):
     
     def step(self, action):
         
+        self.current_step += 1
+        truncated = self.current_step >= self.max_steps
+        
         direction = self._action_to_direction[action]
         
         # np.clip to make sure we don't go out of bounds
-        agent_location_temp = np.clip(self._agent_location + direction, 0, max(self.x_size, self.y_size) - 1)
+        agent_location_temp = np.clip(self._agent_location + direction, [0, 0], [self.y_size - 1, self.x_size - 1])
         
         if self.obs_array[0][agent_location_temp[0], agent_location_temp[1]] == 0.0 and self.obs_array[1][agent_location_temp[0], agent_location_temp[1]] == 0.0:
             # If the next location is not a gap or already visited Cell
-            self.obs_array[2][self._agent_location[0], self._agent_location[1]] = 0.0
+            self.obs_array[2][self._agent_location[0]][self._agent_location[1]] = 0.0
             self._agent_location = agent_location_temp
             
             # Update the agent's location in the observation
-            self.obs_array[0][self._agent_location[0], self._agent_location[1]] = 1.0
-            self.obs_array[2][self._agent_location[0], self._agent_location[1]] = 1.0
+            self.obs_array[0][self._agent_location[0]][self._agent_location[1]] = 1.0
+            self.obs_array[2][self._agent_location[0]][self._agent_location[1]] = 1.0
             
             # Update the path 
             self.path.append(self._agent_location)
@@ -165,12 +174,14 @@ class WitnessEnv(gym.Env):
         # An episode is done if the agent has reached the target, does not mean success
         terminated = np.array_equal(self._agent_location, self._target_location)
         
+        reward = 0
         # Binary sparse rewards
-        if terminated:
+        if terminated or truncated:
             for i in range(self.solution_count):
                 if np.array_equal(self.path, self.solution_paths[i]):
                     reward = 1
                     break
+                
             if reward != 1:
                 reward = 0
         else:
@@ -180,11 +191,10 @@ class WitnessEnv(gym.Env):
         observation = self._get_obs()
         info = self._get_info()
         # If the episode fails for reasons other than reaching the target or failing; Right now not used yet
-        truncated = False
-
-        return observation, reward, terminated, info, truncated
+        return observation, reward, terminated, truncated, info
     
 
-# Idea: What is better: To disaalwo moves after the action or straight up not giving them the option?
+# Idea: What is better: To disallw moves after the action or straight up not giving them the option?
 # Idea: Maybe also add an Info fucntion on top with extra information
 # need to add gaps
+# need to add pygame(human interpretation)

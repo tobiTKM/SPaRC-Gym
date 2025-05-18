@@ -17,3 +17,13 @@ puzzles = process_puzzles(df)
 warnings.filterwarnings("ignore", category=UserWarning)
 
 env = gym.make("Witness-v0", puzzles=puzzles)
+
+obs, info = env.reset()  # Reset the environment and get the initial observation
+
+done = False
+while not done:
+    action = env.action_space.sample()  # Replace with your agent's action
+    obs, reward, terminated, truncated, info = env.step(action)
+    done = terminated or truncated
+    
+print(f"Reward: {reward}, Done: {done}")
