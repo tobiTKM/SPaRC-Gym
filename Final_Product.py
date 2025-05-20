@@ -18,11 +18,12 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 env = gym.make("Witness-v0", puzzles=puzzles)
 
-obs, info = env.reset()  # Reset the environment and get the initial observation
+obs, info = env.reset()  
+print(f"Initial Observation: {obs}")
 
 done = False
 while not done:
-    action = env.action_space.sample()  # Replace with your agent's action
+    action = env.action_space.sample()  # Random action
     obs, reward, terminated, truncated, info = env.step(action)
     done = terminated or truncated
     

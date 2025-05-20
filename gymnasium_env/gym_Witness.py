@@ -196,5 +196,5 @@ class WitnessEnv(gym.Env):
 
 # Idea: What is better: To disallw moves after the action or straight up not giving them the option?
 # Idea: Maybe also add an Info fucntion on top with extra information
-# need to add gaps
 # need to add pygame(human interpretation)
+# Can i always expect the df in the same shape?

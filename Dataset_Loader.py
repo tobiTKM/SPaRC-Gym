@@ -97,6 +97,14 @@ def process_puzzles(df):
                 if combined in obs_array:
                     obs_array[combined][y, x] = 1
 
+        x_size = x_size - 1
+        y_size = y_size - 1
+        # Mark all the green cells as gaps
+        for i in range(x_size):
+            for j in range(y_size):
+                if i % 2 == 1 and j % 2 == 1:
+                    obs_array['gaps'][j, i] = 1
+        
         puzzle.update({'obs_array': obs_array})
         
         # Add the processed puzzle to the list
@@ -107,3 +115,5 @@ def process_puzzles(df):
 # Example usage
 #splits = {'train': 'puzzle_all_train.jsonl', 'test': 'puzzle_all_test.jsonl'}
 #df = pd.read_json("hf://datasets/lkaesberg/SPaRC/" + splits["train"], lines=True)
+#puzzles = process_puzzles(df)
+#print(puzzles[1])  
