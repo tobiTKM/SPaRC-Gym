@@ -8,6 +8,10 @@ import yaml
 import gymnasium_env
 import warnings
 
+''' 
+This script initializes the Witness environment, processes puzzle data, and runs a sample episode.
+'''
+
 splits = {'train': 'puzzle_all_train.jsonl', 'test': 'puzzle_all_test.jsonl'}
 df = pd.read_json("hf://datasets/lkaesberg/SPaRC/" + splits["train"], lines=True)
 
@@ -27,4 +31,4 @@ while not done:
     obs, reward, terminated, truncated, info = env.step(action)
     done = terminated or truncated
     
-print(f"Reward: {reward}, Done: {done}")
+print(f"Reward: {reward}, info: {info} Done: {done}")

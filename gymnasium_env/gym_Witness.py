@@ -15,6 +15,14 @@ class Actions(Enum):
 
 class WitnessEnv(gym.Env):
     def __init__(self, puzzles=None):
+        '''
+        Function to initialize the Witness Environment
+        and loads the first puzzle from the dataset
+        Parameters:
+        puzzles : list
+        A list of dictionaries containing the puzzles
+        '''
+        
         # Load the puzzles
         self.puzzles = puzzles if puzzles is not None else ValueError("No puzzles provided")
         self.current_puzzle_index = 0
@@ -37,13 +45,16 @@ class WitnessEnv(gym.Env):
         --------------
         puzzle variables:
         
+        difficulty : int
+            The difficulty of the puzzle
+            
         x_size : int
             The x size of the puzzle
             
         y_size : int
             The y size of the puzzle
             
-        obs_array : 3D array
+        obs_array : dict; Dictionary of 2D arrays
             The observation array of the puzzle
             
         unique_properties : int
@@ -64,6 +75,8 @@ class WitnessEnv(gym.Env):
         '''
         puzzle = self.puzzles[index]
         
+        self.difficulty = puzzle['difficulty']
+        
         self.x_size = puzzle['x_size']
         self.y_size = puzzle['y_size']
         
@@ -81,32 +94,18 @@ class WitnessEnv(gym.Env):
         
         self._agent_location = np.array([self.start_location[1], self.start_location[0]], dtype=np.int32)
         self._target_location = np.array([self.target_location[1], self.target_location[0]], dtype=np.int32)
-        
-        # Turn it into a 3D array
-        keys = self.obs_array.keys()
-        # Guarantee that the first 4 keys are always the same
-        feature_names = ['visited', 'gaps', 'agent_location', 'target_location']
-        for key in keys:
-            if key not in feature_names:
-                feature_names.append(key)
 
-        if len(feature_names) != self.unique_properties:
-            raise ValueError(f"Number of unique properties does not match the number of features in the observation array. Found {len(feature_names)} features, expected {self.unique_properties}.")
-        
-        self.obs_array = np.stack([self.obs_array[name] for name in feature_names], axis=0)
-        
         # Mark the starting location as visited and set the agent's and target's positions in the observation array
-        self.obs_array[0][self._agent_location[0]][self._agent_location[1]] = 1.0
-        self.obs_array[2][self._agent_location[0]][self._agent_location[1]] = 1.0
-        self.obs_array[3][self._target_location[0]][self._target_location[1]] = 1.0
+        self.obs_array['visited'][self._agent_location[0], self._agent_location[1]] = 1.0
+        self.obs_array['agent_location'][self._agent_location[0], self._agent_location[1]] = 1.0
+        self.obs_array['target_location'][self._target_location[0], self._target_location[1]] = 1.0
         
         # Define the observation space for the environment
-        # Shape: (number of unique properties, grid width, grid height)
-        self.observation_space = spaces.Box(
-            low=0.0,
-            high=1.0,
-            shape=(self.unique_properties, self.x_size, self.y_size),
-            dtype=np.float32,
+        keys = list(self.obs_array.keys())
+        self.observation_space = spaces.Dict({
+            key: spaces.Box(low=0, high=1, shape=(self.y_size, self.x_size), dtype=np.int32)
+            for key in keys
+        }   
         )
         
         # Define the action space (4 discrete actions: right, up, left, down)
@@ -121,14 +120,73 @@ class WitnessEnv(gym.Env):
         
     
     def _get_obs(self):
-        # Just returns the current observation array, that always gets updated immediately
+        '''
+        Function to return the current observation of the puzzle
+        Returns:
+        obs : dict; dictionary of 2D arrays
+            A dictionary containing the current observation of the puzzle
+        '''
         return self.obs_array
              
     def _get_info(self):
-        # Empty for now, but can be used to return extra information about the environment
-        return {}
+        '''
+        Function to return extra information of the current puzzle
+        
+        Returns:
+        info : dict
+            A dictionary containing the following information:
+            - solution_count: The number of solutions for the current puzzle
+            - difficulty: The difficulty of the current puzzle
+            - grid_y_size: The y size of the current puzzle
+            - grid_x_size: The x size of the current puzzle
+            - legal_actions: The legal actions for the current state of the agent
+            - current_step: The current step of the agent
+        '''
+        info = {"solution_count": self.solution_count,
+        "difficulty": self.difficulty,
+        "grid_y_size": self.y_size,
+        "grid_x_size": self.x_size,
+        "legal_actions": self.get_legal_actions(),
+        "current_step": self.current_step
+        }
+        return info
+    
+    def get_legal_actions(self):
+        '''
+        Function to get the legal actions for the current state of the agent
+        
+        Returns:
+        legal : list
+            A list of legal actions for the current state of the agent
+        '''
+        legal = []
+        
+        for action, direction in self._action_to_direction.items():
+            next_loc = self._agent_location + direction
+            # np.clip to make sure we don't go out of bounds
+            agent_location_temp = np.clip(next_loc, [0, 0], [self.y_size - 1, self.x_size - 1])
+            # Check if the next location is not a gap or already visited Cell
+            if self.obs_array['visited'][agent_location_temp[0], agent_location_temp[1]] == 0 and self.obs_array['gaps'][agent_location_temp[0], agent_location_temp[1]] == 0:
+                legal.append(action)
+            
+        return legal
     
     def reset(self, seed=None, options=None):
+        '''
+        Function to reset the environment and load the next puzzle
+        Parameters:
+        seed : int
+            The seed for the random number generator
+        options : dict
+            Additional options for resetting the environment
+            Not used yet
+        ----------
+        Returns:
+        obs : dict; dictionary of 2D arrays
+            A dictionary containing the current observation of the puzzle
+        info : dict
+            A dictionary containing the extra information of the current puzzle
+        '''
         super().reset(seed=seed)
         
         # Move to the next puzzle
@@ -144,23 +202,45 @@ class WitnessEnv(gym.Env):
     
     
     def step(self, action):
+        '''
+        Function to take a step in the environment
+        Parameters:
+        action : int
+            The action to take in the environment
+        ----------
+        Returns:
+        obs : dict; dictionary of 2D arrays
+            A dictionary containing the current observation of the puzzle
+        reward : int
+            The reward for taking the action
+        terminated : bool
+            Whether the episode has terminated
+        truncated : bool
+            Whether the episode has been truncated
+        info : dict
+            A dictionary containing the extra information of the current puzzle
+        '''
         
         self.current_step += 1
         truncated = self.current_step >= self.max_steps
+        
+        # If there are no legal actions left, the episode is truncated
+        if self.get_legal_actions() == []:
+            truncated = True
         
         direction = self._action_to_direction[action]
         
         # np.clip to make sure we don't go out of bounds
         agent_location_temp = np.clip(self._agent_location + direction, [0, 0], [self.y_size - 1, self.x_size - 1])
         
-        if self.obs_array[0][agent_location_temp[0], agent_location_temp[1]] == 0.0 and self.obs_array[1][agent_location_temp[0], agent_location_temp[1]] == 0.0:
+        if self.obs_array['visited'][agent_location_temp[0], agent_location_temp[1]] == 0 and self.obs_array['gaps'][agent_location_temp[0], agent_location_temp[1]] == 0:
             # If the next location is not a gap or already visited Cell
-            self.obs_array[2][self._agent_location[0]][self._agent_location[1]] = 0.0
+            self.obs_array['agent_location'][self._agent_location[0]][self._agent_location[1]] = 0
             self._agent_location = agent_location_temp
             
             # Update the agent's location in the observation
-            self.obs_array[0][self._agent_location[0]][self._agent_location[1]] = 1.0
-            self.obs_array[2][self._agent_location[0]][self._agent_location[1]] = 1.0
+            self.obs_array['visited'][self._agent_location[0]][self._agent_location[1]] = 1
+            self.obs_array['agent_location'][self._agent_location[0]][self._agent_location[1]] = 1
             
             # Update the path 
             self.path.append(self._agent_location)
@@ -194,7 +274,20 @@ class WitnessEnv(gym.Env):
         return observation, reward, terminated, truncated, info
     
 
-# Idea: What is better: To disallw moves after the action or straight up not giving them the option?
-# Idea: Maybe also add an Info fucntion on top with extra information
-# need to add pygame(human interpretation)
-# Can i always expect the df in the same shape?
+# Idea: What is better: To disallow moves after the action or straight up not giving them the option? --> Straight up not giving them the option
+# Not possible to straight up not give them the option, because the Action Space needs to be static, and can not be adjusted for each step
+# Made a function that returns the legal actions for the current state of the agent that is returned in the info dict
+# Also if no legal actions are left, the episode is truncated 
+
+# Big Problem with the current Observation Space:
+# The agent can not distinguish/learn (except for the first 4; because they are always the same(visited,gaps,agent_location,target_location)) the different channels
+# in the observation array 
+# If we made the channels for every puzzle the same, that would kinda fix it --> but then we would have a lot of empty arrays
+# dictionary of 2d arrays could fix that
+# Another Idea: Dictionary but not of 2D arrays, but of the points aka dot: (7,5),(3,2) as an example
+
+# need to add pygame(human interpretation) 
+# Docstrings; clear Documentation
+# Do Readme file
+
+# klares feedback (return)

@@ -8,7 +8,9 @@ def process_puzzles(df):
 
     Parameters:
         df (pd.DataFrame): The DataFrame containing puzzle data.
-
+        
+    --------
+    
     Returns:
         list: A list of dictionaries, each representing a processed puzzle.
     """
@@ -22,6 +24,10 @@ def process_puzzles(df):
 
         puzzle = {}
         
+        # Extract difficulty
+        difficulty = df['difficulty_level'][i]
+        puzzle.update({'difficulty': difficulty})
+         
         # Extract grid size
         grid_size = df['grid_size'][i]
         x_size = grid_size['width']
