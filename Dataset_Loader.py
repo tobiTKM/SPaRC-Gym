@@ -43,7 +43,11 @@ def process_puzzles(df):
         for item in solutions:
             path = [[point["x"], point["y"]] for point in item["path"]]
             solution_paths.append(path)
-        puzzle.update({'solution_count': solution_count, 'solution_paths': solution_paths[0]})
+        puzzle.update({'solution_count': solution_count, 'solution_paths': solution_paths})
+        
+        polyshapes = df['polyshapes'][i]
+        polyshapes_yaml = yaml.safe_load(polyshapes)
+        puzzle.update({'polyshapes': polyshapes_yaml})
         
         # Extract start and target locations
         text_visualization = df['text_visualization'][i]
@@ -98,7 +102,10 @@ def process_puzzles(df):
                         combined = f"{value}_{properties.get('color', '')}_{properties.get('count', '')}"
                     else:
                         combined = f"{value}_{properties.get('polyshape', '')}_{properties.get('color', '')}"
-                
+                elif key == 'dot':
+                    combined = 'dot'
+                elif key == 'gap':
+                    combined = 'gaps'
                 # Update the corresponding observation array
                 if combined in obs_array:
                     obs_array[combined][y, x] = 1

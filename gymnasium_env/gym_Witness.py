@@ -5,6 +5,7 @@ import pygame
 import numpy as np
 import pandas as pd
 import yaml
+import math
 
 class Actions(Enum):
     right = 0
@@ -14,6 +15,7 @@ class Actions(Enum):
     
 
 class WitnessEnv(gym.Env):
+    metadata = {"render_modes": ["human"], "render_fps": 30}
     def __init__(self, puzzles=None):
         '''
         Function to initialize the Witness Environment
@@ -47,7 +49,10 @@ class WitnessEnv(gym.Env):
         
         difficulty : int
             The difficulty of the puzzle
-            
+        
+        polyshapes : dict of 2d arrays
+            The polyshapes of the puzzle
+        
         x_size : int
             The x size of the puzzle
             
@@ -76,6 +81,7 @@ class WitnessEnv(gym.Env):
         puzzle = self.puzzles[index]
         
         self.difficulty = puzzle['difficulty']
+        self.polyshapes = puzzle['polyshapes']
         
         self.x_size = puzzle['x_size']
         self.y_size = puzzle['y_size']
@@ -90,15 +96,15 @@ class WitnessEnv(gym.Env):
         self.solution_count = puzzle['solution_count']
         
         # Initialize the agent's path with the starting location
-        self.path = [self.start_location]
+        self.path = [[self.start_location[0], self.start_location[1]]]
         
         self._agent_location = np.array([self.start_location[1], self.start_location[0]], dtype=np.int32)
         self._target_location = np.array([self.target_location[1], self.target_location[0]], dtype=np.int32)
 
         # Mark the starting location as visited and set the agent's and target's positions in the observation array
-        self.obs_array['visited'][self._agent_location[0], self._agent_location[1]] = 1.0
-        self.obs_array['agent_location'][self._agent_location[0], self._agent_location[1]] = 1.0
-        self.obs_array['target_location'][self._target_location[0], self._target_location[1]] = 1.0
+        self.obs_array['visited'][self._agent_location[0], self._agent_location[1]] = 1
+        self.obs_array['agent_location'][self._agent_location[0], self._agent_location[1]] = 1
+        self.obs_array['target_location'][self._target_location[0], self._target_location[1]] = 1
         
         # Define the observation space for the environment
         keys = list(self.obs_array.keys())
@@ -110,12 +116,12 @@ class WitnessEnv(gym.Env):
         
         # Define the action space (4 discrete actions: right, up, left, down)
         self.action_space = gym.spaces.Discrete(4)
-        # Map actions to directions (e.g., right -> [1, 0], up -> [0, 1], etc.)
+        # Map actions to directions 
         self._action_to_direction = {
-            Actions.right.value: np.array([1, 0]),
-            Actions.up.value: np.array([0, 1]),
-            Actions.left.value: np.array([-1, 0]),
-            Actions.down.value: np.array([0, -1]),
+            Actions.right.value: np.array([0, 1]),
+            Actions.up.value: np.array([-1, 0]),
+            Actions.left.value: np.array([0, -1]),
+            Actions.down.value: np.array([1, 0]),
         }
         
     
@@ -242,8 +248,9 @@ class WitnessEnv(gym.Env):
             self.obs_array['visited'][self._agent_location[0]][self._agent_location[1]] = 1
             self.obs_array['agent_location'][self._agent_location[0]][self._agent_location[1]] = 1
             
-            # Update the path 
-            self.path.append(self._agent_location)
+            # Update the path
+            path = [self._agent_location[1], self._agent_location[0]]
+            self.path.append(path)
             
         else:
             # If the next location is a gap or already visited Cell we do not move
@@ -273,6 +280,178 @@ class WitnessEnv(gym.Env):
         # If the episode fails for reasons other than reaching the target or failing; Right now not used yet
         return observation, reward, terminated, truncated, info
     
+
+    def render(self):
+        """
+        Visualizes the current state of the environment using pygame.
+        """
+        cell_size = 40
+        margin = 2
+        width = self.x_size * cell_size
+        height = self.y_size * cell_size
+
+        if not hasattr(self, "screen"):
+            pygame.init()
+            self.screen = pygame.display.set_mode((width, height))
+            pygame.display.set_caption("WitnessEnv Visualization")
+            self.clock = pygame.time.Clock()
+
+        self.screen.fill((255, 255, 255))  # White background
+
+        # Draw grid and elements
+        for y in range(self.y_size):
+            for x in range(self.x_size):
+                rect = pygame.Rect(x * cell_size, y * cell_size, cell_size - margin, cell_size - margin)
+                color = (200, 200, 200)  # Default: light gray
+
+                # Draw visited cells
+                if self.obs_array["visited"][y, x]:
+                    color = (180, 255, 180) # Light green for visited cells, since they can not be visited again but are not gaps
+                # Draw gaps
+                if self.obs_array["gaps"][y, x]:
+                    color = (0, 128, 0) # Green for gaps
+                # Draw agent
+                if self.obs_array["agent_location"][y, x]:
+                    color = (0, 0, 255) # Blue for agent
+                # Draw target
+                if self.obs_array["target_location"][y, x]:
+                    color = (255, 0, 0) # Red for target
+
+                pygame.draw.rect(self.screen, color, rect)
+
+         # Draw other properties
+        for prop, array in self.obs_array.items():
+            if prop in ["visited", "gaps", "agent_location", "target_location"]:
+                continue  # Skip already visualized properties
+
+            for y in range(self.y_size):
+                for x in range(self.x_size):
+                    if array[y, x]:  # If the property exists at this cell
+                        center = (x * cell_size + cell_size // 2, y * cell_size + cell_size // 2)
+
+                        parts = prop.split("_")
+                        prop_type = parts[0]  # e.g., "star", "poly", "triangle", "dot"
+                        color = self._get_color_from_name(parts)  # Extract color
+
+                        
+                        if prop_type == "star":
+                            self._draw_star(self.screen, color, center, cell_size // 4)
+                            
+                        elif prop_type == "poly":
+                            shape = parts[1]
+                            shape_array = self.polyshapes[shape]
+                            top_left = (x * cell_size, y * cell_size)
+                            self._draw_polyshape(self.screen, shape_array, top_left, cell_size, color)
+                        
+                        elif prop_type == "ylop":
+                            shape = parts[1]
+                            shape_array = self.polyshapes[shape]
+                            top_left = (x * cell_size, y * cell_size)
+                            self._draw_polyshape(self.screen, shape_array, top_left, cell_size, color)
+                            font = pygame.font.Font(None, 18)
+                            text = font.render("ylop", True, (255, 255, 255))
+                            shadow = font.render("ylop", True, (0, 0, 0))
+                            text_rect = text.get_rect(center=(x * cell_size + cell_size // 2, y * cell_size + cell_size // 2 + 8))  # Slightly lower
+                            shadow_rect = text_rect.copy()
+                            shadow_rect.x += 1
+                            shadow_rect.y += 1
+                            self.screen.blit(shadow, shadow_rect)
+                            self.screen.blit(text, text_rect)
+                            
+                        elif prop_type == "triangle":
+                            pygame.draw.polygon(self.screen, color, [
+                                (center[0], center[1] - cell_size // 4),  # Top
+                                (center[0] - cell_size // 4, center[1] + cell_size // 4),  # Bottom-left
+                                (center[0] + cell_size // 4, center[1] + cell_size // 4)   # Bottom-right
+                            ])  # Triangle for triangles
+                            count = parts[2]  
+                            font = pygame.font.Font(None, 28)  # Larger font size
+                            text = font.render(count, True, (255, 255, 255))  # White text
+                            shadow = font.render(count, True, (0, 0, 0))
+                            shadow_pos = (center[0] - 7 + 1, center[1] - 20 + 1)
+                            self.screen.blit(shadow, shadow_pos)
+                            text_pos = (center[0] - 7, center[1] - 20)
+                            self.screen.blit(text, text_pos)
+                        
+                        elif prop_type == "square":
+                            # Draw a filled square at the center of the cell
+                            square_size = cell_size // 2
+                            square_rect = pygame.Rect(
+                                center[0] - square_size // 2,
+                                center[1] - square_size // 2,
+                                square_size,
+                                square_size
+                            )
+                            pygame.draw.rect(self.screen, color, square_rect)
+                            
+                        elif prop_type == "dot":
+                            pygame.draw.circle(self.screen, (0, 0, 0), center, cell_size // 8)  # Small black dot
+
+        
+        pygame.display.flip()
+        self.clock.tick(30)  # Limit to 30 FPS
+
+        
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+
+    def _draw_polyshape(self, surface, shape_array, top_left, cell_size, color):
+        shape_height = len(shape_array)
+        shape_width = len(shape_array[0])
+
+        padding = cell_size // 6
+
+        mini_block_width = (cell_size - 2 * padding) // shape_width
+        mini_block_height = (cell_size - 2 * padding) // shape_height
+
+        for y, row in enumerate(shape_array):
+            for x, val in enumerate(row):
+                if val:
+                    rect = pygame.Rect(
+                        top_left[0] + padding + x * mini_block_width,
+                        top_left[1] + padding + y * mini_block_height,
+                        mini_block_width,
+                        mini_block_height
+                    )
+                    pygame.draw.rect(surface, color, rect)
+    
+    def _draw_star(self, surface, color, center, radius):
+        # 5 points for a classic star
+        points = []
+        for i in range(10):
+            angle = math.pi / 2 + i * math.pi / 5
+            r = radius if i % 2 == 0 else radius // 2
+            x = center[0] + int(math.cos(angle) * r)
+            y = center[1] - int(math.sin(angle) * r)
+            points.append((x, y))
+        pygame.draw.polygon(surface, color, points)
+        
+    def _get_color_from_name(self, parts):
+        """
+        Helper function to extract color from property name parts.
+        """
+        if "red" in parts:
+            return (255, 0, 0)  # Red
+        elif "blue" in parts:
+            return (0, 0, 255)  # Blue
+        elif "yellow" in parts:
+            return (255, 255, 0)  # Yellow
+        elif "green" in parts:
+            return (0, 255, 0)  # Green
+        elif "black" in parts:
+            return (0, 0, 0)  # Black
+        elif "purple" in parts:
+            return (128, 0, 128)  # Purple
+        elif "orange" in parts:
+            return (255, 165, 0)  # Orange
+        elif "white" in parts:
+            return (255, 255, 255)  # White
+        else:
+            return (128, 128, 128)  # Default: Gray
+        
+        
 
 # Idea: What is better: To disallow moves after the action or straight up not giving them the option? --> Straight up not giving them the option
 # Not possible to straight up not give them the option, because the Action Space needs to be static, and can not be adjusted for each step
