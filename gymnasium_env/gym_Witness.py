@@ -3,11 +3,19 @@ import gymnasium as gym
 from gymnasium import spaces
 import pygame
 import numpy as np
-import pandas as pd
 import yaml
 import math
 
 class Actions(Enum):
+    """
+    Enum class representing the possible actions the agent can take in the environment.
+
+    Actions:
+        right (int): Move the agent one step to the right.
+        up (int): Move the agent one step upward.
+        left (int): Move the agent one step to the left.
+        down (int): Move the agent one step downward.
+    """
     right = 0
     up = 1
     left = 2
@@ -18,11 +26,11 @@ class WitnessEnv(gym.Env):
     metadata = {"render_modes": ["human"], "render_fps": 30}
     def __init__(self, puzzles=None):
         '''
-        Function to initialize the Witness Environment
+        Function to initialize the Witness Environment, processes the puzzles dataset,
         and loads the first puzzle from the dataset
         Parameters:
-        puzzles : list
-        A list of dictionaries containing the puzzles
+        puzzles : df
+        A pandas DataFrame containing the puzzles to be used in the environment.
         '''
         
         # Load the puzzles
@@ -31,6 +39,8 @@ class WitnessEnv(gym.Env):
         self.max_steps = 2000
         self.current_step = 0
         
+        # Process the puzzles to extract relevant information
+        self.puzzles = self.process_puzzles(self.puzzles)
         # Load the first puzzle
         self._load_puzzle(self.current_puzzle_index) 
        
@@ -123,7 +133,131 @@ class WitnessEnv(gym.Env):
             Actions.left.value: np.array([0, -1]),
             Actions.down.value: np.array([1, 0]),
         }
+    
+    def process_puzzles(self, df):
+        """
+        Processes a DataFrame of puzzles and returns a list of puzzle dictionaries.
+
+        Parameters:
+            df (pd.DataFrame): The DataFrame containing puzzle data.
+            
+        --------
         
+        Returns:
+            list: A list of dictionaries, each representing a processed puzzle.
+        """
+        
+        if df is None:
+                raise ValueError("No dataframe provided")
+            
+        puzzles = []
+
+        for i in range(len(df)):
+
+            puzzle = {}
+            
+            # Extract difficulty
+            difficulty = df['difficulty_level'][i]
+            puzzle.update({'difficulty': difficulty})
+            
+            # Extract grid size
+            grid_size = df['grid_size'][i]
+            x_size = grid_size['width']
+            y_size = grid_size['height']
+            x_size = x_size + x_size + 1
+            y_size = y_size + y_size + 1
+            puzzle.update({'x_size': x_size, 'y_size': y_size})
+            
+            # Extract solution paths
+            solution_count = df['solution_count'][i]
+            solutions = df['solutions'][i]
+            solution_paths = []
+            for item in solutions:
+                path = [[point["x"], point["y"]] for point in item["path"]]
+                solution_paths.append(path)
+            puzzle.update({'solution_count': solution_count, 'solution_paths': solution_paths})
+            
+            # Extract the polyshapes (eg. an L shape)
+            polyshapes = df['polyshapes'][i]
+            polyshapes_yaml = yaml.safe_load(polyshapes)
+            puzzle.update({'polyshapes': polyshapes_yaml})
+            
+            # Extract start and target locations
+            text_visualization = df['text_visualization'][i]
+            text_yaml = yaml.safe_load(text_visualization)
+            start_location = (text_yaml["puzzle"]["start"]["x"], text_yaml["puzzle"]["start"]["y"])
+            target_location = (text_yaml["puzzle"]["end"]["x"], text_yaml["puzzle"]["end"]["y"])
+            puzzle.update({'start_location': start_location, 'target_location': target_location})
+            
+            # Initialize observation arrays
+            obs_array = {
+                'visited': np.zeros((y_size, x_size), dtype=int),
+                'gaps': np.zeros((y_size, x_size), dtype=int),
+                'agent_location': np.zeros((y_size, x_size), dtype=int),
+                'target_location': np.zeros((y_size, x_size), dtype=int)
+            }
+            
+            # Extract unique properties
+            unique_properties = set()
+            for cell in text_yaml["puzzle"]["cells"]:
+                properties = cell.get("properties", {})
+                for key, value in properties.items():
+                    if key == 'type':
+                        if value == 'star' or value == 'square':
+                            combined = f"{value}_{properties.get('color', '')}"
+                        elif value == 'triangle':
+                            combined = f"{value}_{properties.get('color', '')}_{properties.get('count', '')}"
+                        else:
+                            combined = f"{value}_{properties.get('polyshape', '')}_{properties.get('color', '')}"
+                        unique_properties.add(combined)
+                        
+                    elif key == 'dot':
+                        combined = 'dot'
+                        unique_properties.add(combined)
+                    # Add new property to obs_array if not already present
+                    if combined not in obs_array:
+                        obs_array.update({combined: np.zeros((y_size, x_size), dtype=int)})
+            
+            unique_property_count = len(unique_properties) + 4  # Adding 4 for the base properties(visited, gaps, agent_location, target_location)
+            puzzle.update({'unique_properties': unique_property_count})
+            
+            # Populate observation arrays
+            for cell in text_yaml["puzzle"]["cells"]:
+                position = cell.get("position", {})
+                properties = cell.get("properties", {})
+                x, y = position.get("x"), position.get("y")
+
+                for key, value in properties.items():
+                    if key == 'type':
+                        if value == 'star' or value == 'square':
+                            combined = f"{value}_{properties.get('color', '')}"
+                        elif value == 'triangle':
+                            combined = f"{value}_{properties.get('color', '')}_{properties.get('count', '')}"
+                        else:
+                            combined = f"{value}_{properties.get('polyshape', '')}_{properties.get('color', '')}"
+                    elif key == 'dot':
+                        combined = 'dot'
+                    elif key == 'gap':
+                        combined = 'gaps'
+                    # Update the corresponding observation array
+                    if combined in obs_array:
+                        obs_array[combined][y, x] = 1
+
+            x_size = x_size - 1
+            y_size = y_size - 1
+            # Mark all the green cells as gaps
+            for i in range(x_size):
+                for j in range(y_size):
+                    if i % 2 == 1 and j % 2 == 1:
+                        obs_array['gaps'][j, i] = 1
+            
+            puzzle.update({'obs_array': obs_array})
+            
+            # Add the processed puzzle to the list
+            puzzles.append(puzzle)
+        
+        return puzzles
+    
     
     def _get_obs(self):
         '''
@@ -197,6 +331,9 @@ class WitnessEnv(gym.Env):
         
         # Move to the next puzzle
         self.current_puzzle_index = (self.current_puzzle_index + 1) % len(self.puzzles)
+        
+        # Also possible to randomly select a puzzle
+        # self.current_puzzle_index = np.random.randint(0, len(self.puzzles))
         
         self.current_step = 0
         
@@ -277,7 +414,7 @@ class WitnessEnv(gym.Env):
         # Update the observation
         observation = self._get_obs()
         info = self._get_info()
-        # If the episode fails for reasons other than reaching the target or failing; Right now not used yet
+        
         return observation, reward, terminated, truncated, info
     
 
@@ -309,7 +446,7 @@ class WitnessEnv(gym.Env):
                     color = (180, 255, 180) # Light green for visited cells, since they can not be visited again but are not gaps
                 # Draw gaps
                 if self.obs_array["gaps"][y, x]:
-                    color = (0, 128, 0) # Green for gaps
+                    color = (0, 128, 0) # dark Green for gaps
                 # Draw agent
                 if self.obs_array["agent_location"][y, x]:
                     color = (0, 0, 255) # Blue for agent
@@ -333,48 +470,56 @@ class WitnessEnv(gym.Env):
                         prop_type = parts[0]  # e.g., "star", "poly", "triangle", "dot"
                         color = self._get_color_from_name(parts)  # Extract color
 
-                        
+                        # Draw the property based on its type
+                        # Draw a star
                         if prop_type == "star":
                             self._draw_star(self.screen, color, center, cell_size // 4)
-                            
+                        
+                        # Draw a polyshape
                         elif prop_type == "poly":
                             shape = parts[1]
                             shape_array = self.polyshapes[shape]
                             top_left = (x * cell_size, y * cell_size)
                             self._draw_polyshape(self.screen, shape_array, top_left, cell_size, color)
                         
+                        # Draw a polyshape with "ylop" type
                         elif prop_type == "ylop":
                             shape = parts[1]
                             shape_array = self.polyshapes[shape]
                             top_left = (x * cell_size, y * cell_size)
                             self._draw_polyshape(self.screen, shape_array, top_left, cell_size, color)
+                            
+                            # Add text "ylop"
                             font = pygame.font.Font(None, 18)
                             text = font.render("ylop", True, (255, 255, 255))
                             shadow = font.render("ylop", True, (0, 0, 0))
-                            text_rect = text.get_rect(center=(x * cell_size + cell_size // 2, y * cell_size + cell_size // 2 + 8))  # Slightly lower
+                            text_rect = text.get_rect(center=(x * cell_size + cell_size // 2, y * cell_size + cell_size // 2 + 8))
                             shadow_rect = text_rect.copy()
                             shadow_rect.x += 1
                             shadow_rect.y += 1
                             self.screen.blit(shadow, shadow_rect)
                             self.screen.blit(text, text_rect)
-                            
+                        
+                        # Draw a triangle with a count    
                         elif prop_type == "triangle":
                             pygame.draw.polygon(self.screen, color, [
                                 (center[0], center[1] - cell_size // 4),  # Top
                                 (center[0] - cell_size // 4, center[1] + cell_size // 4),  # Bottom-left
                                 (center[0] + cell_size // 4, center[1] + cell_size // 4)   # Bottom-right
-                            ])  # Triangle for triangles
+                            ])
+                            
+                            # Add text for triangle count
                             count = parts[2]  
-                            font = pygame.font.Font(None, 28)  # Larger font size
-                            text = font.render(count, True, (255, 255, 255))  # White text
+                            font = pygame.font.Font(None, 28) 
+                            text = font.render(count, True, (255, 255, 255)) 
                             shadow = font.render(count, True, (0, 0, 0))
                             shadow_pos = (center[0] - 7 + 1, center[1] - 20 + 1)
                             self.screen.blit(shadow, shadow_pos)
                             text_pos = (center[0] - 7, center[1] - 20)
                             self.screen.blit(text, text_pos)
                         
+                        # Draw a square
                         elif prop_type == "square":
-                            # Draw a filled square at the center of the cell
                             square_size = cell_size // 2
                             square_rect = pygame.Rect(
                                 center[0] - square_size // 2,
@@ -383,9 +528,10 @@ class WitnessEnv(gym.Env):
                                 square_size
                             )
                             pygame.draw.rect(self.screen, color, square_rect)
-                            
+                        
+                        # Draw a dot    
                         elif prop_type == "dot":
-                            pygame.draw.circle(self.screen, (0, 0, 0), center, cell_size // 8)  # Small black dot
+                            pygame.draw.circle(self.screen, (0, 0, 0), center, cell_size // 8)
 
         
         pygame.display.flip()
@@ -398,6 +544,17 @@ class WitnessEnv(gym.Env):
                 exit()
 
     def _draw_polyshape(self, surface, shape_array, top_left, cell_size, color):
+        """
+        Draws a polyshape inside a given cell.
+
+        Parameters:
+            surface (pygame.Surface): The Pygame surface to draw on.
+            shape_array (list of lists): A 2D array representing the polyshape, where 1 indicates a filled cell and 0 indicates an empty cell.
+            top_left (tuple): The top-left corner of the cell
+            cell_size (int): The size of the cell in pixels.
+            color (tuple): The RGB color to use for the polyshape.
+        """
+        
         shape_height = len(shape_array)
         shape_width = len(shape_array[0])
 
@@ -418,7 +575,15 @@ class WitnessEnv(gym.Env):
                     pygame.draw.rect(surface, color, rect)
     
     def _draw_star(self, surface, color, center, radius):
-        # 5 points for a classic star
+        """
+        Draws a star shape at a specified location.
+
+        Parameters:
+            surface (pygame.Surface): The Pygame surface to draw on.
+            color (tuple): The RGB color to use for the star.
+            center (tuple): The (x, y) coordinates of the center of the star.
+            radius (int): The radius of the star, determining its size.
+        """
         points = []
         for i in range(10):
             angle = math.pi / 2 + i * math.pi / 5
@@ -465,8 +630,4 @@ class WitnessEnv(gym.Env):
 # dictionary of 2d arrays could fix that
 # Another Idea: Dictionary but not of 2D arrays, but of the points aka dot: (7,5),(3,2) as an example
 
-# need to add pygame(human interpretation) 
-# Docstrings; clear Documentation
 # Do Readme file
-
-# klares feedback (return)
