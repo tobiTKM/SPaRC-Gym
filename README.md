@@ -70,7 +70,14 @@ The environment uses `pygame` for rendering:
 
 ## Folder Structure
 
-Gym-TheWitnessGame/ # Custom environment implementation ├── gymnasium_env/ # Core environment logic │ ├── init.py # Environment initialization │ ├── gym_Witness.py # Core environment logic │ ├── register_env.py # Environment registration ├── Final_Product.py # Main script for human interaction ├── human_play.py # Function for human play └── README.md # Project documentation
+- Gym-TheWitnessGame/ # Custom environment implementation
+    - gymnasium_env/ # Core environment logic
+        - init.py # Environment initialization 
+        - gym_Witness.py # Core environment logic 
+         - register_env.py # Environment registration 
+    - Final_Product.py # Main script for human interaction
+    - human_play.py # Function for human play 
+    - README.md # Project documentation
 
 ----
 
