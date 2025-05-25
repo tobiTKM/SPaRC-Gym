@@ -2,6 +2,7 @@ import gymnasium as gym
 import pandas as pd
 import gymnasium_env
 import warnings
+import time
 from human_play import play_human
 
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -21,6 +22,8 @@ env = gym.make("Witness-v0", puzzles=df)
 obs, reward, info = play_human(env)
     
 print(f"Reward: {reward}, info: {info}")
+print('\n')
+print(f"Observation:", obs)
 
 '''
 # Otherwise, you can run a sample episode automatically by uncommenting the following lines:
@@ -42,6 +45,7 @@ while True:
     # Step the environment with the selected action
     obs, reward, terminated, truncated, info = env.step(action)
     env.render()
+    time.sleep(1)
     
     # Check if the episode has ended
     if terminated or truncated:

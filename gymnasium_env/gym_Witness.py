@@ -481,6 +481,17 @@ class WitnessEnv(gym.Env):
                             shape_array = self.polyshapes[shape]
                             top_left = (x * cell_size, y * cell_size)
                             self._draw_polyshape(self.screen, shape_array, top_left, cell_size, color)
+
+                            # Add text "poly" for polyshape
+                            font = pygame.font.Font(None, 18)
+                            text = font.render("poly", True, (255, 255, 255))
+                            shadow = font.render("poly", True, (0, 0, 0))
+                            text_rect = text.get_rect(center=(x * cell_size + cell_size // 2, y * cell_size + cell_size // 2 + 8))
+                            shadow_rect = text_rect.copy()
+                            shadow_rect.x += 1
+                            shadow_rect.y += 1
+                            self.screen.blit(shadow, shadow_rect)
+                            self.screen.blit(text, text_rect)
                         
                         # Draw a polyshape with "ylop" type
                         elif prop_type == "ylop":
