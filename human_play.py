@@ -28,8 +28,6 @@ def play_human(env, i=1):
         obs, info = env.reset()
 
     running = True
-    # Visualize the initial state of the environment
-    env.render()
 
     while running:
         action = None
@@ -55,7 +53,6 @@ def play_human(env, i=1):
         # and render the new state
         if action is not None and action in info["legal_actions"]:
             obs, reward, terminated, truncated, info = env.step(action)
-            env.render()
             done = terminated or truncated
             
             # If the episode is done, exit the loop and return the final observation, reward, and info

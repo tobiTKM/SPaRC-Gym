@@ -16,10 +16,12 @@ splits = {'train': 'puzzle_all_train.jsonl', 'test': 'puzzle_all_test.jsonl'}
 df = pd.read_json("hf://datasets/lkaesberg/SPaRC/" + splits["train"], lines=True)
 
 # Initialize the Witness environment with the loaded puzzles
-env = gym.make("Witness-v0", puzzles=df)
+env = gym.make("Witness-v0", puzzles=df, render_mode='human')
 
-# If you want to play the game using human inputs, use the play_human function.
+# If you want to play the game using human inputs, use the play_human function. 
+# render_mode needs to be set to 'human' for this to work.
 obs, reward, info = play_human(env)
+#obs, reward, info = play_human(env,2)
     
 print(f"Reward: {reward}, info: {info}")
 print('\n')
@@ -33,10 +35,6 @@ print(f"Observation:", obs)
 # Has to be called before starting the episode. 
 obs, info = env.reset()
 
-# Visualize the initial state of the environment
-# env.render() will display the current state of the puzzle.
-env.render()
-
 while True:
     # Sample a random action from the action space
     # Can be replaced with a specific action if desired.
@@ -44,8 +42,7 @@ while True:
     
     # Step the environment with the selected action
     obs, reward, terminated, truncated, info = env.step(action)
-    env.render()
-    time.sleep(1)
+    #time.sleep(1)
     
     # Check if the episode has ended
     if terminated or truncated:

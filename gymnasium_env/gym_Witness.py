@@ -24,7 +24,7 @@ class Actions(Enum):
 
 class WitnessEnv(gym.Env):
     metadata = {"render_modes": ["human"], "render_fps": 30}
-    def __init__(self, puzzles=None):
+    def __init__(self, puzzles=None, render_mode=None):
         '''
         Function to initialize the Witness Environment, processes the puzzles dataset,
         and loads the first puzzle from the dataset
@@ -32,6 +32,7 @@ class WitnessEnv(gym.Env):
         puzzles : df
         A pandas DataFrame containing the puzzles to be used in the environment.
         '''
+        self.render_mode = render_mode
         
         # Load the puzzles
         self.puzzles = puzzles if puzzles is not None else ValueError("No puzzles provided")
@@ -97,6 +98,9 @@ class WitnessEnv(gym.Env):
         self.y_size = puzzle['y_size']
         
         self.obs_array = puzzle['obs_array']
+        self.color_array = puzzle['color_array']
+        self.additional_info = puzzle['additional_info']
+        
         self.unique_properties = puzzle['unique_properties']
         
         self.start_location = puzzle['start_location']
@@ -107,6 +111,7 @@ class WitnessEnv(gym.Env):
         
         # Initialize the agent's path with the starting location
         self.path = [[self.start_location[0], self.start_location[1]]]
+        self.normal_reward = 0
         
         self._agent_location = np.array([self.start_location[1], self.start_location[0]], dtype=np.int32)
         self._target_location = np.array([self.target_location[1], self.target_location[0]], dtype=np.int32)
@@ -119,10 +124,10 @@ class WitnessEnv(gym.Env):
         # Define the observation space for the environment
         keys = list(self.obs_array.keys())
         self.observation_space = spaces.Dict({
-            key: spaces.Box(low=0, high=1, shape=(self.y_size, self.x_size), dtype=np.int32)
-            for key in keys
-        }   
-        )
+            'base': spaces.Dict({key: spaces.Box(low=0, high=1, shape=(self.y_size, self.x_size), dtype=np.int32) for key in keys}),
+            'color': spaces.Box(low=0, high=8, shape=(self.y_size, self.x_size), dtype=np.int32),
+            'additional_info': spaces.Box(low=0, high=143632, shape=(self.y_size, self.x_size), dtype=np.int32)
+        })
         
         # Define the action space (4 discrete actions: right, up, left, down)
         self.action_space = gym.spaces.Discrete(4)
@@ -197,26 +202,62 @@ class WitnessEnv(gym.Env):
                 'target_location': np.zeros((y_size, x_size), dtype=int)
             }
             
+            color_array = np.zeros((y_size, x_size), dtype=int)
+            additional_info = np.zeros((y_size, x_size), dtype=int)
+            
             # Extract unique properties
             unique_properties = set()
             for cell in text_yaml["puzzle"]["cells"]:
                 properties = cell.get("properties", {})
+                count = None
+                shape = None
+                color = None
+                symbol = None
+                combined = None
                 for key, value in properties.items():
                     if key == 'type':
                         if value == 'star' or value == 'square':
                             combined = f"{value}_{properties.get('color', '')}"
+                            symbol = f"{value}"
+                            color = properties.get('color', '')
                         elif value == 'triangle':
                             combined = f"{value}_{properties.get('color', '')}_{properties.get('count', '')}"
+                            symbol = f"{value}"
+                            color = properties.get('color', '')
+                            count = properties.get('count', '')
                         else:
                             combined = f"{value}_{properties.get('polyshape', '')}_{properties.get('color', '')}"
+                            symbol = f"{value}"
+                            color = properties.get('color', '')
+                            shape = properties.get('polyshape', '')
                         unique_properties.add(combined)
                         
                     elif key == 'dot':
-                        combined = 'dot'
-                        unique_properties.add(combined)
+                        symbol = 'dot'
+                        unique_properties.add(symbol)
                     # Add new property to obs_array if not already present
-                    if combined not in obs_array:
-                        obs_array.update({combined: np.zeros((y_size, x_size), dtype=int)})
+                    if symbol not in obs_array:
+                        obs_array.update({symbol: np.zeros((y_size, x_size), dtype=int)})
+                        
+                    # Update the colors
+                    if color:
+                        color_to_number = {"red": 1, "blue": 2, "yellow": 3, "green": 4, "black": 5, "purple": 6, "orange": 7, "white": 8} 
+                        position = cell.get("position", {}) 
+                        x, y = position.get("x"), position.get("y")                  
+                        for color_ in color_to_number:
+                            if color_ == color:
+                                color_array[y][x] = color_to_number[color_]
+                            
+                    # update additional information
+                    if count:
+                        position = cell.get("position", {}) 
+                        x, y = position.get("x"), position.get("y")  
+                        additional_info[y][x] = count
+                    elif shape:
+                        position = cell.get("position", {}) 
+                        x, y = position.get("x"), position.get("y")  
+                        additional_info[y][x] = shape
+                    
             
             unique_property_count = len(unique_properties) + 4  # Adding 4 for the base properties(visited, gaps, agent_location, target_location)
             puzzle.update({'unique_properties': unique_property_count})
@@ -252,6 +293,8 @@ class WitnessEnv(gym.Env):
                         obs_array['gaps'][j, i] = 1
             
             puzzle.update({'obs_array': obs_array})
+            puzzle.update({'color_array': color_array})
+            puzzle.update({'additional_info': additional_info})
             
             # Add the processed puzzle to the list
             puzzles.append(puzzle)
@@ -262,11 +305,21 @@ class WitnessEnv(gym.Env):
     def _get_obs(self):
         '''
         Function to return the current observation of the puzzle
-        Returns:
+        Returns: dictionary of:
+        dictionary of 2D arrays,
+        2D array,
+        2D array
+        ----------
+        {
         obs : dict; dictionary of 2D arrays
-            A dictionary containing the current observation of the puzzle
+            A dictionary containing the current locations of the propertie of the puzzle
+        color_array : 2D array
+            A 2D array containing the colors of the properties in the puzzle
+        additional_info : 2D array
+            A 2D array containing additional information about the properties in the puzzle
+        }
         '''
-        return self.obs_array
+        return {'base': self.obs_array, 'color': self.color_array, 'additional_info': self.additional_info}
              
     def _get_info(self):
         '''
@@ -287,7 +340,8 @@ class WitnessEnv(gym.Env):
         "grid_y_size": self.y_size,
         "grid_x_size": self.x_size,
         "legal_actions": self.get_legal_actions(),
-        "current_step": self.current_step
+        "current_step": self.current_step,
+        "agent_location": self._agent_location
         }
         return info
     
@@ -306,8 +360,16 @@ class WitnessEnv(gym.Env):
             # np.clip to make sure we don't go out of bounds
             agent_location_temp = np.clip(next_loc, [0, 0], [self.y_size - 1, self.x_size - 1])
             # Check if the next location is not a gap or already visited Cell
-            if self.obs_array['visited'][agent_location_temp[0], agent_location_temp[1]] == 0 and self.obs_array['gaps'][agent_location_temp[0], agent_location_temp[1]] == 0:
-                legal.append(action)
+            if self.obs_array['gaps'][agent_location_temp[0], agent_location_temp[1]] == 0:
+                if self.obs_array['visited'][agent_location_temp[0], agent_location_temp[1]] == 1:
+                    if len(self.path) >= 2:
+                        last_loc = np.array([self.path[-2][1], self.path[-2][0]], dtype=np.int32)
+                        if np.array_equal(last_loc, agent_location_temp):
+                            if np.array_equal(next_loc, agent_location_temp): 
+                                legal.append(action)
+                else:
+                    if np.array_equal(next_loc, agent_location_temp):
+                        legal.append(action)
             
         return legal
     
@@ -340,6 +402,19 @@ class WitnessEnv(gym.Env):
         # Load the next puzzle
         self._load_puzzle(self.current_puzzle_index)
         
+        # Visualize the initial state of the environment
+        if self.render_mode == "human":
+            if hasattr(self, "screen"):
+                # Close the existing window
+                pygame.display.quit()
+            
+            # Initialize pygame and create a new window  
+            pygame.init()
+            self.screen = pygame.display.set_mode((self.x_size * 40, self.y_size * 40))
+            pygame.display.set_caption("WitnessEnv Visualization")
+            self.clock = pygame.time.Clock()
+            self.render()
+        
         # Return the initial observation for the new puzzle
         return self._get_obs(), self._get_info()
     
@@ -371,52 +446,96 @@ class WitnessEnv(gym.Env):
         if self.get_legal_actions() == []:
             truncated = True
         
-        direction = self._action_to_direction[action]
-        
-        # np.clip to make sure we don't go out of bounds
-        agent_location_temp = np.clip(self._agent_location + direction, [0, 0], [self.y_size - 1, self.x_size - 1])
-        
-        if self.obs_array['visited'][agent_location_temp[0], agent_location_temp[1]] == 0 and self.obs_array['gaps'][agent_location_temp[0], agent_location_temp[1]] == 0:
-            # If the next location is not a gap or already visited Cell
-            self.obs_array['agent_location'][self._agent_location[0]][self._agent_location[1]] = 0
-            self._agent_location = agent_location_temp
-            
-            # Update the agent's location in the observation
-            self.obs_array['visited'][self._agent_location[0]][self._agent_location[1]] = 1
-            self.obs_array['agent_location'][self._agent_location[0]][self._agent_location[1]] = 1
-            
-            # Update the path
-            path = [self._agent_location[1], self._agent_location[0]]
-            self.path.append(path)
-            
+        # If the action is not in the legal actions, we do not move
+        if action not in self.get_legal_actions():
+            pass
         else:
-            # If the next location is a gap or already visited Cell we do not move
-            # and we keep the previous location
-            self._agent_location = self._agent_location
+            direction = self._action_to_direction[action]
+            agent_location_temp = self._agent_location + direction
             
+            if self.obs_array['visited'][agent_location_temp[0], agent_location_temp[1]] == 1:
+                last_loc = np.array([self.path[-2][1], self.path[-2][0]], dtype=np.int32)
+                if np.array_equal(last_loc, agent_location_temp): 
+                    # If the next location is already visited and is the last location, we are allowed to move back
+                    self.obs_array['agent_location'][self._agent_location[0]][self._agent_location[1]] = 0
+                    self.obs_array['visited'][self._agent_location[0]][self._agent_location[1]] = 0
+                    self._agent_location = agent_location_temp
+                    
+                    # Update the agent's location in the observation
+                    self.obs_array['visited'][self._agent_location[0]][self._agent_location[1]] = 1
+                    self.obs_array['agent_location'][self._agent_location[0]][self._agent_location[1]] = 1
+                    
+                    # Update the path
+                    del self.path[-1]
+            else:
+                self.obs_array['agent_location'][self._agent_location[0]][self._agent_location[1]] = 0
+                self._agent_location = agent_location_temp
+                
+                # Update the agent's location in the observation
+                self.obs_array['visited'][self._agent_location[0]][self._agent_location[1]] = 1
+                self.obs_array['agent_location'][self._agent_location[0]][self._agent_location[1]] = 1
+                
+                # Update the path
+                path = [self._agent_location[1], self._agent_location[0]]
+                self.path.append(path)
+          
         
         # An episode is done if the agent has reached the target, does not mean success
         terminated = np.array_equal(self._agent_location, self._target_location)
         
-        reward = 0
+        outcome_reward = 0
         # Binary sparse rewards
         if terminated or truncated:
             for i in range(self.solution_count):
                 if np.array_equal(self.path, self.solution_paths[i]):
-                    reward = 1
+                    outcome_reward = 1
+                    self.normal_reward = 1
                     break
                 
-            if reward != 1:
-                reward = 0
+            if outcome_reward != 1:
+                outcome_reward = -1
+                self.normal_reward = -1
         else:
-            reward = 0
-            
+            outcome_reward = 0
+            for i in range(self.solution_count):
+                current_solution_path = self.solution_paths[i]
+                if self.is_on_solution_path(self.path, current_solution_path):
+                    self.normal_reward += 0.01
+                    break
+
+        
         # Update the observation
         observation = self._get_obs()
         info = self._get_info()
+        reward = {"normal_reward": self.normal_reward, "outcome_reward": outcome_reward}
+        
+        # Visualize the current state of the environment
+        if self.render_mode == "human":
+            self.render()
         
         return observation, reward, terminated, truncated, info
     
+    def is_on_solution_path(self, current_path, solution_path):
+        """
+        Checks if the current path is still on the solution path.
+
+        Args:
+            current_path (list): The path taken so far.
+            solution_path (list): The correct solution path.
+
+        Returns:
+            bool: True if the current path is on the solution path, False otherwise.
+        """
+        # If the current path is longer than the solution path, return False
+        if len(current_path) > len(solution_path):
+            return False
+
+        # Compare each step in the current path with the solution path
+        for i in range(len(current_path)):
+            if current_path[i] != solution_path[i]:
+                return False
+
+        return True
 
     def render(self):
         """
@@ -424,14 +543,6 @@ class WitnessEnv(gym.Env):
         """
         cell_size = 40
         margin = 2
-        width = self.x_size * cell_size
-        height = self.y_size * cell_size
-
-        if not hasattr(self, "screen"):
-            pygame.init()
-            self.screen = pygame.display.set_mode((width, height))
-            pygame.display.set_caption("WitnessEnv Visualization")
-            self.clock = pygame.time.Clock()
 
         self.screen.fill((255, 255, 255))  # White background
 
@@ -626,19 +737,4 @@ class WitnessEnv(gym.Env):
             return (255, 255, 255)  # White
         else:
             return (128, 128, 128)  # Default: Gray
-        
-        
-
-# Idea: What is better: To disallow moves after the action or straight up not giving them the option? --> Straight up not giving them the option
-# Not possible to straight up not give them the option, because the Action Space needs to be static, and can not be adjusted for each step
-# Made a function that returns the legal actions for the current state of the agent that is returned in the info dict
-# Also if no legal actions are left, the episode is truncated 
-
-# Big Problem with the current Observation Space:
-# The agent can not distinguish/learn (except for the first 4; because they are always the same(visited,gaps,agent_location,target_location)) the different channels
-# in the observation array 
-# If we made the channels for every puzzle the same, that would kinda fix it --> but then we would have a lot of empty arrays
-# dictionary of 2d arrays could fix that
-# Another Idea: Dictionary but not of 2D arrays, but of the points aka dot: (7,5),(3,2) as an example
-
-# Do Readme file
+                
