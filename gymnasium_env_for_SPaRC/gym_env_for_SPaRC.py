@@ -22,7 +22,7 @@ class Actions(Enum):
     down = 3
     
 
-class WitnessEnv(gym.Env):
+class GymEnvSPaRC(gym.Env):
     metadata = {"render_modes": ["human"], "render_fps": 30}
     def __init__(self, puzzles=None, render_mode=None):
         '''
@@ -212,8 +212,6 @@ class WitnessEnv(gym.Env):
                 count = None
                 shape = None
                 color = None
-                symbol = None
-                combined = None
                 for key, value in properties.items():
                     if key == 'type':
                         if value == 'star' or value == 'square':
@@ -270,19 +268,14 @@ class WitnessEnv(gym.Env):
 
                 for key, value in properties.items():
                     if key == 'type':
-                        if value == 'star' or value == 'square':
-                            combined = f"{value}_{properties.get('color', '')}"
-                        elif value == 'triangle':
-                            combined = f"{value}_{properties.get('color', '')}_{properties.get('count', '')}"
-                        else:
-                            combined = f"{value}_{properties.get('polyshape', '')}_{properties.get('color', '')}"
+                        symbol = f"{value}"
                     elif key == 'dot':
-                        combined = 'dot'
+                        symbol = 'dot'
                     elif key == 'gap':
-                        combined = 'gaps'
+                        symbol = 'gaps'
                     # Update the corresponding observation array
-                    if combined in obs_array:
-                        obs_array[combined][y, x] = 1
+                    if symbol in obs_array:
+                        obs_array[symbol][y, x] = 1
 
             x_size = x_size - 1
             y_size = y_size - 1
@@ -577,9 +570,9 @@ class WitnessEnv(gym.Env):
                     if array[y, x]:  # If the property exists at this cell
                         center = (x * cell_size + cell_size // 2, y * cell_size + cell_size // 2)
 
-                        parts = prop.split("_")
-                        prop_type = parts[0]  # e.g., "star", "poly", "triangle", "dot"
-                        color = self._get_color_from_name(parts)  # Extract color
+                        prop_type = prop  # e.g., "star", "poly", "triangle", "dot"
+                        color = self.color_array[y, x]  # Get the color from the color array
+                        color = self._get_color_from_name(color)  # Extract color
 
                         # Draw the property based on its type
                         # Draw a star
@@ -588,7 +581,7 @@ class WitnessEnv(gym.Env):
                         
                         # Draw a polyshape
                         elif prop_type == "poly":
-                            shape = parts[1]
+                            shape = f'{self.additional_info[y, x] }' # Get the polyshape name from additional_info
                             shape_array = self.polyshapes[shape]
                             top_left = (x * cell_size, y * cell_size)
                             self._draw_polyshape(self.screen, shape_array, top_left, cell_size, color)
@@ -606,7 +599,7 @@ class WitnessEnv(gym.Env):
                         
                         # Draw a polyshape with "ylop" type
                         elif prop_type == "ylop":
-                            shape = parts[1]
+                            shape = f'{self.additional_info[y, x]}'  # Get the polyshape name from additional_info
                             shape_array = self.polyshapes[shape]
                             top_left = (x * cell_size, y * cell_size)
                             self._draw_polyshape(self.screen, shape_array, top_left, cell_size, color)
@@ -631,7 +624,7 @@ class WitnessEnv(gym.Env):
                             ])
                             
                             # Add text for triangle count
-                            count = parts[2]  
+                            count = f'{self.additional_info[y, x]}'  # Get the count from additional_info 
                             font = pygame.font.Font(None, 28) 
                             text = font.render(count, True, (255, 255, 255)) 
                             shadow = font.render(count, True, (0, 0, 0))
@@ -715,25 +708,25 @@ class WitnessEnv(gym.Env):
             points.append((x, y))
         pygame.draw.polygon(surface, color, points)
         
-    def _get_color_from_name(self, parts):
+    def _get_color_from_name(self, color):
         """
         Helper function to extract color from property name parts.
         """
-        if "red" in parts:
+        if color == 1:
             return (255, 0, 0)  # Red
-        elif "blue" in parts:
+        elif color == 2:
             return (0, 0, 255)  # Blue
-        elif "yellow" in parts:
+        elif color == 3:
             return (255, 255, 0)  # Yellow
-        elif "green" in parts:
+        elif color == 4:
             return (0, 255, 0)  # Green
-        elif "black" in parts:
+        elif color == 5:
             return (0, 0, 0)  # Black
-        elif "purple" in parts:
+        elif color == 6:
             return (128, 0, 128)  # Purple
-        elif "orange" in parts:
+        elif color == 7:
             return (255, 165, 0)  # Orange
-        elif "white" in parts:
+        elif color == 8:
             return (255, 255, 255)  # White
         else:
             return (128, 128, 128)  # Default: Gray

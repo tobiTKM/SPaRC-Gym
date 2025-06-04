@@ -8,5 +8,5 @@ Modules:
     - register_env: Handles the registration of the Witness environment with Gymnasium.
 """
 
-from .gym_Witness import WitnessEnv
+from .gym_env_for_SPaRC import GymEnvSPaRC
 from .register_env import *
