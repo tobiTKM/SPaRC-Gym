@@ -24,7 +24,7 @@ class Actions(Enum):
 
 class GymEnvSPaRC(gym.Env):
     metadata = {"render_modes": ["human"], "render_fps": 30}
-    def __init__(self, puzzles=None, render_mode=None):
+    def __init__(self, puzzles=None, render_mode=None, traceback = False):
         '''
         Function to initialize the Witness Environment, processes the puzzles dataset,
         and loads the first puzzle from the dataset
@@ -33,6 +33,7 @@ class GymEnvSPaRC(gym.Env):
         A pandas DataFrame containing the puzzles to be used in the environment.
         '''
         self.render_mode = render_mode
+        self.traceback = traceback
         
         # Load the puzzles
         self.puzzles = puzzles if puzzles is not None else ValueError("No puzzles provided")
@@ -100,9 +101,7 @@ class GymEnvSPaRC(gym.Env):
         self.obs_array = puzzle['obs_array']
         self.color_array = puzzle['color_array']
         self.additional_info = puzzle['additional_info']
-        
-        self.unique_properties = puzzle['unique_properties']
-        
+                
         self.start_location = puzzle['start_location']
         self.target_location = puzzle['target_location']
         
@@ -205,8 +204,7 @@ class GymEnvSPaRC(gym.Env):
             color_array = np.zeros((y_size, x_size), dtype=int)
             additional_info = np.zeros((y_size, x_size), dtype=int)
             
-            # Extract unique properties
-            unique_properties = set()
+            # Extract symbols, colors and additional info 
             for cell in text_yaml["puzzle"]["cells"]:
                 properties = cell.get("properties", {})
                 count = None
@@ -215,24 +213,19 @@ class GymEnvSPaRC(gym.Env):
                 for key, value in properties.items():
                     if key == 'type':
                         if value == 'star' or value == 'square':
-                            combined = f"{value}_{properties.get('color', '')}"
                             symbol = f"{value}"
                             color = properties.get('color', '')
                         elif value == 'triangle':
-                            combined = f"{value}_{properties.get('color', '')}_{properties.get('count', '')}"
                             symbol = f"{value}"
                             color = properties.get('color', '')
                             count = properties.get('count', '')
                         else:
-                            combined = f"{value}_{properties.get('polyshape', '')}_{properties.get('color', '')}"
                             symbol = f"{value}"
                             color = properties.get('color', '')
                             shape = properties.get('polyshape', '')
-                        unique_properties.add(combined)
                         
                     elif key == 'dot':
                         symbol = 'dot'
-                        unique_properties.add(symbol)
                     # Add new property to obs_array if not already present
                     if symbol not in obs_array:
                         obs_array.update({symbol: np.zeros((y_size, x_size), dtype=int)})
@@ -256,9 +249,6 @@ class GymEnvSPaRC(gym.Env):
                         x, y = position.get("x"), position.get("y")  
                         additional_info[y][x] = shape
                     
-            
-            unique_property_count = len(unique_properties) + 4  # Adding 4 for the base properties(visited, gaps, agent_location, target_location)
-            puzzle.update({'unique_properties': unique_property_count})
             
             # Populate observation arrays
             for cell in text_yaml["puzzle"]["cells"]:
@@ -352,14 +342,15 @@ class GymEnvSPaRC(gym.Env):
             next_loc = self._agent_location + direction
             # np.clip to make sure we don't go out of bounds
             agent_location_temp = np.clip(next_loc, [0, 0], [self.y_size - 1, self.x_size - 1])
-            # Check if the next location is not a gap or already visited Cell
+            # Check if the next location is not a gap
             if self.obs_array['gaps'][agent_location_temp[0], agent_location_temp[1]] == 0:
                 if self.obs_array['visited'][agent_location_temp[0], agent_location_temp[1]] == 1:
-                    if len(self.path) >= 2:
-                        last_loc = np.array([self.path[-2][1], self.path[-2][0]], dtype=np.int32)
-                        if np.array_equal(last_loc, agent_location_temp):
-                            if np.array_equal(next_loc, agent_location_temp): 
-                                legal.append(action)
+                    if self.traceback:
+                        if len(self.path) >= 2:
+                            last_loc = np.array([self.path[-2][1], self.path[-2][0]], dtype=np.int32)
+                            if np.array_equal(last_loc, agent_location_temp):
+                                if np.array_equal(next_loc, agent_location_temp): 
+                                    legal.append(action)
                 else:
                     if np.array_equal(next_loc, agent_location_temp):
                         legal.append(action)
@@ -443,23 +434,25 @@ class GymEnvSPaRC(gym.Env):
         if action not in self.get_legal_actions():
             pass
         else:
+            previous_loc = self._agent_location
             direction = self._action_to_direction[action]
             agent_location_temp = self._agent_location + direction
             
             if self.obs_array['visited'][agent_location_temp[0], agent_location_temp[1]] == 1:
-                last_loc = np.array([self.path[-2][1], self.path[-2][0]], dtype=np.int32)
-                if np.array_equal(last_loc, agent_location_temp): 
-                    # If the next location is already visited and is the last location, we are allowed to move back
-                    self.obs_array['agent_location'][self._agent_location[0]][self._agent_location[1]] = 0
-                    self.obs_array['visited'][self._agent_location[0]][self._agent_location[1]] = 0
-                    self._agent_location = agent_location_temp
-                    
-                    # Update the agent's location in the observation
-                    self.obs_array['visited'][self._agent_location[0]][self._agent_location[1]] = 1
-                    self.obs_array['agent_location'][self._agent_location[0]][self._agent_location[1]] = 1
-                    
-                    # Update the path
-                    del self.path[-1]
+                if self.traceback:
+                    last_loc = np.array([self.path[-2][1], self.path[-2][0]], dtype=np.int32)
+                    if np.array_equal(last_loc, agent_location_temp): 
+                        # If the next location is already visited and is the last location, we are allowed to move back
+                        self.obs_array['agent_location'][self._agent_location[0]][self._agent_location[1]] = 0
+                        self.obs_array['visited'][self._agent_location[0]][self._agent_location[1]] = 0
+                        self._agent_location = agent_location_temp
+                        
+                        # Update the agent's location in the observation
+                        self.obs_array['visited'][self._agent_location[0]][self._agent_location[1]] = 1
+                        self.obs_array['agent_location'][self._agent_location[0]][self._agent_location[1]] = 1
+                        
+                        # Update the path
+                        del self.path[-1]
             else:
                 self.obs_array['agent_location'][self._agent_location[0]][self._agent_location[1]] = 0
                 self._agent_location = agent_location_temp
@@ -477,7 +470,9 @@ class GymEnvSPaRC(gym.Env):
         terminated = np.array_equal(self._agent_location, self._target_location)
         
         outcome_reward = 0
-        # Binary sparse rewards
+        # Reward logic:
+        # Have an outcome reward and a normal reward
+        # The normal reward is updated during the episode, the outcome reward is only updated at the end of the episode
         if terminated or truncated:
             for i in range(self.solution_count):
                 if np.array_equal(self.path, self.solution_paths[i]):
@@ -490,11 +485,12 @@ class GymEnvSPaRC(gym.Env):
                 self.normal_reward = -1
         else:
             outcome_reward = 0
-            for i in range(self.solution_count):
-                current_solution_path = self.solution_paths[i]
-                if self.is_on_solution_path(self.path, current_solution_path):
-                    self.normal_reward += 0.01
-                    break
+            if not np.array_equal(previous_loc, self._agent_location):
+                for i in range(self.solution_count):
+                    current_solution_path = self.solution_paths[i]
+                    if self.is_on_solution_path(self.path, current_solution_path):
+                        self.normal_reward += 0.01
+                        break
 
         
         # Update the observation
