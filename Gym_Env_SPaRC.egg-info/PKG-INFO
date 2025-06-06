@@ -1,3 +1,33 @@
+Metadata-Version: 2.4
+Name: Gym-Env-SPaRC
+Version: 0.1.0
+Summary: A Gymnasium environment for SPaRC puzzles
+Home-page: https://github.com/tobiTKM/Gym-Environment_for_SPaRC
+Author: Tobias Mark
+Author-email: tobi09.mark@gmx.net
+License: MIT
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: gymnasium>=0.28.1
+Requires-Dist: numpy>=1.26.4
+Requires-Dist: pygame>=2.2.0
+Requires-Dist: pyyaml>=5.1
+Requires-Dist: pandas>=2.2.1
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: license
+Dynamic: license-file
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
 # Gym Environment for SpaRC Project
 
 ----
@@ -10,7 +40,6 @@ A custom Gymnasium environment for SPaRC. The Game and Dataset was develop by: h
 - **puzzles(pd.DataFrame)** The puzzles that should be used. The puzzles must come in the shape of https://sparc.gipplab.org/ .
 - **traceback (bool)** When set to True it allows the Agent to move back on his path, if False it does not.
 - **render_mode(str)** Optional, If render_mode='human' the Gym Environment will visualize every step using `pygame`.
-- **max_steps(int)** Optional, the maximum amount of steps the Gym environment will runbefore it terminates.
 
 ----
 ## Installation and Usage

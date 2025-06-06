@@ -1,0 +1,12 @@
+LICENSE
+README.md
+setup.py
+Gym_Env_SPaRC.egg-info/PKG-INFO
+Gym_Env_SPaRC.egg-info/SOURCES.txt
+Gym_Env_SPaRC.egg-info/dependency_links.txt
+Gym_Env_SPaRC.egg-info/entry_points.txt
+Gym_Env_SPaRC.egg-info/requires.txt
+Gym_Env_SPaRC.egg-info/top_level.txt
+gymnasium_env_for_SPaRC/__init__.py
+gymnasium_env_for_SPaRC/gym_env_for_SPaRC.py
+gymnasium_env_for_SPaRC/register_env.py

@@ -24,7 +24,7 @@ class Actions(Enum):
 
 class GymEnvSPaRC(gym.Env):
     metadata = {"render_modes": ["human"], "render_fps": 30}
-    def __init__(self, puzzles=None, render_mode=None, traceback = False):
+    def __init__(self, puzzles=None, render_mode=None, traceback=False, max_steps=2000):
         '''
         Function to initialize the Witness Environment, processes the puzzles dataset,
         and loads the first puzzle from the dataset
@@ -34,11 +34,11 @@ class GymEnvSPaRC(gym.Env):
         '''
         self.render_mode = render_mode
         self.traceback = traceback
-        
+        self.max_steps = max_steps
+
         # Load the puzzles
         self.puzzles = puzzles if puzzles is not None else ValueError("No puzzles provided")
         self.current_puzzle_index = 0
-        self.max_steps = 2000
         self.current_step = 0
         
         # Process the puzzles to extract relevant information

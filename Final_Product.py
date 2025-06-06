@@ -1,9 +1,10 @@
 import gymnasium as gym
 import pandas as pd
-import gymnasium_env_for_SPaRC
+#import gymnasium_env_for_SPaRC
 import warnings
 import time
 from human_play import play_human
+
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -16,7 +17,7 @@ splits = {'train': 'puzzle_all_train.jsonl', 'test': 'puzzle_all_test.jsonl'}
 df = pd.read_json("hf://datasets/lkaesberg/SPaRC/" + splits["train"], lines=True)
 
 # Initialize the Witness environment with the loaded puzzles
-env = gym.make("env-SPaRC-v0", puzzles=df, render_mode='human', traceback=False)
+env = gym.make("env-SPaRC-v0", puzzles=df, render_mode='human', traceback=True)
 
 # If you want to play the game using human inputs, use the play_human function. 
 # render_mode needs to be set to 'human' for this to work.
