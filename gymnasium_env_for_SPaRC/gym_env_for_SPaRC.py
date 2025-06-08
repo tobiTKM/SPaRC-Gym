@@ -111,6 +111,7 @@ class GymEnvSPaRC(gym.Env):
         # Initialize the agent's path with the starting location
         self.path = [[self.start_location[0], self.start_location[1]]]
         self.normal_reward = 0
+        self.outcome_reward = 0
         
         self._agent_location = np.array([self.start_location[1], self.start_location[0]], dtype=np.int32)
         self._target_location = np.array([self.target_location[1], self.target_location[0]], dtype=np.int32)
@@ -123,9 +124,9 @@ class GymEnvSPaRC(gym.Env):
         # Define the observation space for the environment
         keys = list(self.obs_array.keys())
         self.observation_space = spaces.Dict({
-            'base': spaces.Dict({key: spaces.Box(low=0, high=1, shape=(self.y_size, self.x_size), dtype=np.int32) for key in keys}),
-            'color': spaces.Box(low=0, high=8, shape=(self.y_size, self.x_size), dtype=np.int32),
-            'additional_info': spaces.Box(low=0, high=143632, shape=(self.y_size, self.x_size), dtype=np.int32)
+            'base': spaces.Dict({key: spaces.Box(low=0, high=1, shape=(self.y_size, self.x_size), dtype=np.int64) for key in keys}),
+            'color': spaces.Box(low=0, high=8, shape=(self.y_size, self.x_size), dtype=np.int64),
+            'additional_info': spaces.Box(low=0, high=143632, shape=(self.y_size, self.x_size), dtype=np.int64)
         })
         
         # Define the action space (4 discrete actions: right, up, left, down)
@@ -324,7 +325,8 @@ class GymEnvSPaRC(gym.Env):
         "grid_x_size": self.x_size,
         "legal_actions": self.get_legal_actions(),
         "current_step": self.current_step,
-        "agent_location": self._agent_location
+        "agent_location": self._agent_location,
+        "Rewards": {"normal_reward": self.normal_reward, "outcome_reward": self.outcome_reward}
         }
         return info
     
@@ -432,7 +434,7 @@ class GymEnvSPaRC(gym.Env):
         
         # If the action is not in the legal actions, we do not move
         if action not in self.get_legal_actions():
-            pass
+            previous_loc = self._agent_location
         else:
             previous_loc = self._agent_location
             direction = self._action_to_direction[action]
@@ -469,22 +471,21 @@ class GymEnvSPaRC(gym.Env):
         # An episode is done if the agent has reached the target, does not mean success
         terminated = np.array_equal(self._agent_location, self._target_location)
         
-        outcome_reward = 0
         # Reward logic:
         # Have an outcome reward and a normal reward
         # The normal reward is updated during the episode, the outcome reward is only updated at the end of the episode
         if terminated or truncated:
             for i in range(self.solution_count):
                 if np.array_equal(self.path, self.solution_paths[i]):
-                    outcome_reward = 1
+                    self.outcome_reward = 1
                     self.normal_reward = 1
                     break
                 
-            if outcome_reward != 1:
-                outcome_reward = -1
+            if self.outcome_reward != 1:
+                self.outcome_reward = -1
                 self.normal_reward = -1
         else:
-            outcome_reward = 0
+            self.outcome_reward = 0
             if not np.array_equal(previous_loc, self._agent_location):
                 for i in range(self.solution_count):
                     current_solution_path = self.solution_paths[i]
@@ -496,7 +497,9 @@ class GymEnvSPaRC(gym.Env):
         # Update the observation
         observation = self._get_obs()
         info = self._get_info()
-        reward = {"normal_reward": self.normal_reward, "outcome_reward": outcome_reward}
+
+        # Unfortunately, I have to return the normal reward here, since gymnasium expects a reward to be a scalar value, not a dictionary of scalar values
+        reward = self.normal_reward
         
         # Visualize the current state of the environment
         if self.render_mode == "human":
