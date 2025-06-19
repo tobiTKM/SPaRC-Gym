@@ -124,8 +124,8 @@ class GymEnvSPaRC(gym.Env):
         # Define the observation space for the environment
         keys = list(self.obs_array.keys())
         self.observation_space = spaces.Dict({
-            'base': spaces.Dict({key: spaces.Box(low=0, high=1, shape=(self.y_size, self.x_size), dtype=np.int64) for key in keys}),
-            'color': spaces.Box(low=0, high=8, shape=(self.y_size, self.x_size), dtype=np.int64),
+            'base': spaces.Dict({key: spaces.Box(low=0, high=1, shape=(self.y_size, self.x_size), dtype=np.int32) for key in keys}),
+            'color': spaces.Box(low=0, high=8, shape=(self.y_size, self.x_size), dtype=np.int32),
             'additional_info': spaces.Box(low=0, high=143632, shape=(self.y_size, self.x_size), dtype=np.int64)
         })
         
@@ -196,14 +196,14 @@ class GymEnvSPaRC(gym.Env):
             
             # Initialize observation arrays
             obs_array = {
-                'visited': np.zeros((y_size, x_size), dtype=int),
-                'gaps': np.zeros((y_size, x_size), dtype=int),
-                'agent_location': np.zeros((y_size, x_size), dtype=int),
-                'target_location': np.zeros((y_size, x_size), dtype=int)
+                'visited': np.zeros((y_size, x_size), dtype=np.int32),
+                'gaps': np.zeros((y_size, x_size), dtype=np.int32),
+                'agent_location': np.zeros((y_size, x_size), dtype=np.int32),
+                'target_location': np.zeros((y_size, x_size), dtype=np.int32)
             }
             
-            color_array = np.zeros((y_size, x_size), dtype=int)
-            additional_info = np.zeros((y_size, x_size), dtype=int)
+            color_array = np.zeros((y_size, x_size), dtype=np.int32)
+            additional_info = np.zeros((y_size, x_size), dtype=np.int64)
             
             # Extract symbols, colors and additional info 
             for cell in text_yaml["puzzle"]["cells"]:
@@ -229,7 +229,7 @@ class GymEnvSPaRC(gym.Env):
                         symbol = 'dot'
                     # Add new property to obs_array if not already present
                     if symbol not in obs_array:
-                        obs_array.update({symbol: np.zeros((y_size, x_size), dtype=int)})
+                        obs_array.update({symbol: np.zeros((y_size, x_size), dtype=np.int32)})
                         
                     # Update the colors
                     if color:
@@ -425,18 +425,12 @@ class GymEnvSPaRC(gym.Env):
             A dictionary containing the extra information of the current puzzle
         '''
         
+        orig_loc = self._agent_location.copy()
         self.current_step += 1
         truncated = self.current_step >= self.max_steps
         
-        # If there are no legal actions left, the episode is truncated
-        if self.get_legal_actions() == []:
-            truncated = True
-        
         # If the action is not in the legal actions, we do not move
-        if action not in self.get_legal_actions():
-            previous_loc = self._agent_location
-        else:
-            previous_loc = self._agent_location
+        if action in self.get_legal_actions():
             direction = self._action_to_direction[action]
             agent_location_temp = self._agent_location + direction
             
@@ -471,6 +465,10 @@ class GymEnvSPaRC(gym.Env):
         # An episode is done if the agent has reached the target, does not mean success
         terminated = np.array_equal(self._agent_location, self._target_location)
         
+        # If there are no legal actions left (for the next step), the episode is truncated
+        if self.get_legal_actions() == []:
+            truncated = True
+        
         # Reward logic:
         # Have an outcome reward and a normal reward
         # The normal reward is updated during the episode, the outcome reward is only updated at the end of the episode
@@ -486,7 +484,7 @@ class GymEnvSPaRC(gym.Env):
                 self.normal_reward = -1
         else:
             self.outcome_reward = 0
-            if not np.array_equal(previous_loc, self._agent_location):
+            if not np.array_equal(orig_loc, self._agent_location):
                 for i in range(self.solution_count):
                     current_solution_path = self.solution_paths[i]
                     if self.is_on_solution_path(self.path, current_solution_path):

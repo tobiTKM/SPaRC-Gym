@@ -1,2 +1,0 @@
-[gymnasium.envs]
-env-SPaRC-v0 = gymnasium_env_for_SPaRC.gym_env_for_SPaRC:GymEnvSPaRC
