@@ -296,7 +296,7 @@ class GymEnvSPaRC(gym.Env):
         ----------
         {
         obs : dict; dictionary of 2D arrays
-            A dictionary containing the current locations of the propertie of the puzzle
+            A dictionary containing the current locations of the properties of the puzzle
         color_array : 2D array
             A 2D array containing the colors of the properties in the puzzle
         additional_info : 2D array
