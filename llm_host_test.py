@@ -10,55 +10,53 @@ import os
 import re
 import logging
 import yaml
+import asyncio
+from tqdm import tqdm
+from tqdm import trange
+from datasets import load_dataset
+import pandas as pd
 
-'''
-This script demonstrates how to use the Gym environement for SPaRC with an LLM.
-It initializes the environment, sets up the LLM client, and runs a loop to interact with
-the environment using the LLM to decide actions based on observations.
-'''
 
-# Load the environment variables from the .env file
-load_dotenv()              
+load_dotenv()
 API_KEY = os.getenv("API_KEY")
-API_URL = os.getenv("API_URL")
-API_URL = API_URL.rsplit("/chat/completions", 1)[0]
+API_URL = os.getenv("API_URL").rsplit("/chat/completions",1)[0]
+client = OpenAI(api_key=API_KEY, base_url=API_URL)
 
-# Initialize the OpenAI client
-client = OpenAI(
-    api_key=API_KEY,
-    base_url=API_URL,
-)
+ds = load_dataset("lkaesberg/SPaRC", 'all', split="test")
+df = ds.to_pandas()
 
-# Load the SPaRC dataset
-splits = {'train': 'puzzle_all_train.jsonl', 'test': 'puzzle_all_test.jsonl'}
-df = pd.read_json("hf://datasets/lkaesberg/SPaRC/" + splits["test"], lines=True)
+def make_json_safe(obj, seen=None):
+    if seen is None: seen=set()
+    oid=id(obj)
+    if oid in seen: return None
+    seen.add(oid)
+    if isinstance(obj, np.ndarray): return obj.tolist()
+    if isinstance(obj, dict): return {k: make_json_safe(v,seen) for k,v in obj.items()}
+    if isinstance(obj,(list,tuple)): return [make_json_safe(v,seen) for v in obj]
+    if isinstance(obj,(int,float,str,bool)) or obj is None: return obj
+    return str(obj)
 
-# Initialize the SPaRC environment
-max_steps = 1000  # Define the maximum number of steps for the episode
-env = gym.make("env-SPaRC-v0", puzzles=df, render_mode='human', traceback=False, max_steps=max_steps)
+async def run_episode(i):
+    env = gym.make("env-SPaRC-v0", puzzles=df, render_mode=None, traceback=False, max_steps=1000)
 
-for i in range(len(df)):
-    # Set up logging
     logging.basicConfig(
-        filename=f'logfiles/puzzle{i}.log',
-        level=logging.INFO,
-        format='%(asctime)s %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S',
-        force=True
+        filename=f"logfiles/puzzle{i}.log", level=logging.INFO,
+        format="%(asctime)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S", force=True
     )
     logger = logging.getLogger()
-    logger.info(f"Starting episode {i+1}/{len(df)}")
-    
-    obs, info = env.reset()
+    logger.info(f"Episode {i+1}/{len(df)} start")
+
+    for _ in range(i+1):
+        obs, info = env.reset()
+
     reward = 0
     if i == len(df) - 1:
         polyshapes = df['polyshapes'][0]
     else:
         polyshapes = df['polyshapes'][i+1]
-
+    
     polyshapes = yaml.safe_load(polyshapes)
 
-    # Define the system prompt for the LLM
     system_prompt = f"""
     You are an autonomous agent controlling a path‐finding puzzle solver.
     Your goal is to find a valid path (a continuous line) from the specified Start Node to the End Node on the provided grid, adhering to all puzzle rules.
@@ -126,64 +124,26 @@ for i in range(len(df)):
     where <digit> is exactly one of 0=right, 1=up, 2=left, 3=down.
     No other output beyond your reasoning and that Final line.
     """
+    messages = [{"role":"system","content":system_prompt}]
 
-    # Initialize the messages list with the system prompt
-    messages = [
-        {"role": "system", "content": system_prompt}
-    ]
+    for step in range(1000):
+        user_payload = json.dumps(make_json_safe({'obs':obs,'info':info,'reward':reward}))
+        messages.append({"role":"user","content":user_payload})
 
-
-    def make_json_safe(obj, seen=None):
-        """
-        Recursively convert obj into JSON‐safe primitives.
-        Drop circular refs by returning None.
-        """
-        if seen is None:
-            seen = set()
-        oid = id(obj)
-        if oid in seen:
-            return None
-        seen.add(oid)
-
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        elif isinstance(obj, dict):
-            return {k: make_json_safe(v, seen) for k, v in obj.items()}
-        elif isinstance(obj, (list, tuple)):
-            return [make_json_safe(v, seen) for v in obj]
-        elif isinstance(obj, (int, float, str, bool)) or obj is None:
-            return obj
-        else:
-            return str(obj)
-
-    # Main loop to interact with the environment
-    for step in range(max_steps):
-        user_content = {
-            'observation': obs,
-            'info': info,
-            'reward': reward
-        }
-        
-        safe_payload = make_json_safe(user_content)
-        
-        messages.append({
-            "role": "user",
-            "content": json.dumps(safe_payload)
-        })
-
-        response = client.chat.completions.create(
+        response = await asyncio.to_thread(
+            client.chat.completions.create,
             model="Qwen/Qwen3-32B",
             messages=messages,
-            temperature=0.0,
+            temperature=0.0
         )
-        
+
         reply = response.choices[0].message.content.strip()
         m = re.search(r"Final:\s*([0-3])", reply)
         if not m:
             raise ValueError(f"Could not find Final: <digit> in model output:\n{reply}")
         
         action = int(m.group(1))
-        
+
         obs, reward, terminated, truncated, info = env.step(action)
 
         # log everything
@@ -196,9 +156,22 @@ for i in range(len(df)):
             reward,
             reply
         )
-            
-        messages.append({"role": "assistant", "content": reply})
-
+        
+        messages.append({"role":"assistant","content":reply})
+        
         if terminated or truncated:
-            print(f"Episode ended,  reward={reward}, info={info}")
             break
+
+    logger.info("Episode %d done", i+1)
+
+async def main():
+    tasks = [run_episode(i) for i in range(3)]
+    for finished in tqdm(
+        asyncio.as_completed(tasks),
+        total=len(tasks),
+        desc="Episodes"
+    ):
+        await finished
+
+if __name__=="__main__":
+    asyncio.run(main())
