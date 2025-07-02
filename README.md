@@ -107,6 +107,7 @@ The environment uses `pygame` for rendering:
     - Final_Product.py # Main script for human interaction
     - llm_host.py # Example script for using the gym with a llm
     - human_play.py # Function for human play 
+    - parse_logs.py # Script to filter out the results of the created logfiles from llm_host.py 
     - README.md # Project documentation
 
 ----
