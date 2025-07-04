@@ -61,7 +61,7 @@ how to use:
     - 2D Array is of shape of the puzzle
   - **additional_info: list** A 2D Array with additional Info about the puzzle
     - 2D Array is of shape of the puzzle
-    - Possible additiona_info:
+    - Possible additional_info:
     - ID of the polyshape
     - Count of the Triangles
 
