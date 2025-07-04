@@ -59,7 +59,7 @@ how to use:
   - **color: list**: A 2D Array representing the colors of the properties.
     - 8 possible colors are represented with 1-8
     - 2D Array is of shape of the puzzle
-  - **additional_info: list** A 2D Array with additiional Info about the puzzle
+  - **additional_info: list** A 2D Array with additional Info about the puzzle
     - 2D Array is of shape of the puzzle
     - Possible additiona_info:
     - ID of the polyshape

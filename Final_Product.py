@@ -2,14 +2,15 @@ import gymnasium as gym
 import pandas as pd
 import gymnasium_env_for_SPaRC
 from human_play import play_human
+from datasets import load_dataset
 
 ''' 
 This script initializes the Gym environment and runs a sample episode.
 '''
 
 # Load the dataset containing puzzles, here used is the SPaRC dataset.
-splits = {'train': 'puzzle_all_train.jsonl', 'test': 'puzzle_all_test.jsonl'}
-df = pd.read_json("hf://datasets/lkaesberg/SPaRC/" + splits["train"], lines=True)
+ds = load_dataset("lkaesberg/SPaRC", 'all', split="test")
+df = ds.to_pandas()
 
 # Initialize the Gym environment with the loaded puzzles
 env = gym.make("env-SPaRC-v0", puzzles=df, render_mode='human', traceback=True, max_steps=1000)
