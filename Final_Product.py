@@ -16,7 +16,7 @@ df = ds.to_pandas()
 env = gym.make("env-SPaRC-v0", puzzles=df, render_mode='human', traceback=True, max_steps=1000)
 
 # If you want to play the game using human inputs, use the play_human function. 
-# render_mode needs to be set to 'human' for this to work.
+# render_mode can now be set to either 'human' or 'llm' and both will work.
 obs, reward, info = play_human(env)
     
 print(f"Reward: {reward}, info: {info}")
