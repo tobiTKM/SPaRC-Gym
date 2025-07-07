@@ -17,7 +17,11 @@ env = gym.make("env-SPaRC-v0", puzzles=df, render_mode='human', traceback=True, 
 
 # If you want to play the game using human inputs, use the play_human function. 
 # render_mode can now be set to either 'human' or 'llm' and both will work.
-obs, reward, info = play_human(env)
+while True:
+    obs, reward, info = play_human(env)
+    if reward == 1:
+        break
+    env.reset()
     
 print(f"Reward: {reward}, info: {info}")
 

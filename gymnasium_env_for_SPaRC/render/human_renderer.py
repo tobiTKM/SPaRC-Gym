@@ -51,7 +51,7 @@ class HumanRenderer:
             pygame.display.quit()
             self.initialized = False
     
-    def render(self, obs_array, color_array, additional_info, polyshapes, x_size, y_size, start_location, target_location):
+    def render(self, obs_array, color_array, additional_info, polyshapes, x_size, y_size, start_location, target_location, path):
         """
         Renders a simple grid with the specified colors.
         
@@ -197,7 +197,7 @@ class HumanRenderer:
         draw_line_round_corners_polygon(self.screen, line_start, line_end, end_line_color, line_width)
 
         # Draw agent path in white
-        self._draw_agent_path(obs_array, y_size, x_size, padding, cell_size, line_width)
+        self._draw_agent_path(path, y_size, x_size, padding, cell_size, line_width)
 
         # Draw other properties (symbols)
         for prop, array in obs_array.items():
@@ -360,49 +360,33 @@ class HumanRenderer:
         else:
             return (128, 128, 128)  # Default: Gray
     
-    def _draw_agent_path(self, obs_array, y_size, x_size, padding, cell_size, line_width):
-        """Draw the agent's path in white color."""
-        if "visited" not in obs_array:
+    def _draw_agent_path(self, path, y_size, x_size, padding, cell_size, line_width):
+        """Draw the agent's path as white lines connecting positions in order."""
+        if not path or len(path) < 2:
             return
         
-        # Find all visited positions
-        visited_positions = []
-        for y in range(y_size):
-            for x in range(x_size):
-                if obs_array["visited"][y, x] == 1:
-                    visited_positions.append((x, y))
+        # Draw white line segments connecting consecutive positions in the path
+        white_line_width = max(1, int(line_width))
         
-        if len(visited_positions) < 2:
-            return  # Need at least 2 positions to draw a line
-        
-        # Draw line segments between adjacent visited positions
-        for i in range(len(visited_positions)):
-            current_pos = visited_positions[i]
+        for i in range(len(path) - 1):
+            current_pos = path[i]  # [x, y] format
+            next_pos = path[i + 1]  # [x, y] format
+            
+            # Convert to pixel coordinates (note the coordinate swap: path uses [x,y] but pixel calc needs [y,x])
             current_pixel = (
                 padding + current_pos[0] * cell_size // 2,
                 padding + current_pos[1] * cell_size // 2
             )
+            next_pixel = (
+                padding + next_pos[0] * cell_size // 2,
+                padding + next_pos[1] * cell_size // 2
+            )
             
-            # Check for adjacent positions (up, down, left, right)
-            for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-                adjacent_pos = (current_pos[0] + dx, current_pos[1] + dy)
-                
-                # Check if adjacent position is in visited list and within bounds
-                if (adjacent_pos in visited_positions and 
-                    0 <= adjacent_pos[0] < x_size and 
-                    0 <= adjacent_pos[1] < y_size):
-                    
-                    adjacent_pixel = (
-                        padding + adjacent_pos[0] * cell_size // 2,
-                        padding + adjacent_pos[1] * cell_size // 2
-                    )
-                    
-                    # Draw white line segment with reduced width
-                    white_line_width = max(1, int(line_width))  # Slightly thinner than grid lines
-                    draw_line_round_corners_polygon(
-                        self.screen, current_pixel, adjacent_pixel, 
-                        (255, 255, 255), white_line_width
-                    )
+            # Draw white line segment between consecutive path positions
+            draw_line_round_corners_polygon(
+                self.screen, current_pixel, next_pixel, 
+                (255, 255, 255), white_line_width
+            )
     
     def _draw_line_with_gaps(self, start_pos, end_pos, line_coord, is_vertical, obs_array, line_width, gap_size):
         """Draw a line with gaps where specified in the obs_array."""

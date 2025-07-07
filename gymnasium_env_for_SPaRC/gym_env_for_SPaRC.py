@@ -549,7 +549,8 @@ class GymEnvSPaRC(gym.Env):
                 self.x_size, 
                 self.y_size,
                 self.start_location,
-                self.target_location
+                self.target_location,
+                self.path
             )
         elif self.render_mode == "llm" and self.llm_renderer is not None:
             return self.llm_renderer.render(
