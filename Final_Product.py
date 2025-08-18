@@ -13,7 +13,7 @@ ds = load_dataset("lkaesberg/SPaRC", 'all', split="test")
 df = ds.to_pandas()
 
 # Initialize the Gym environment with the loaded puzzles
-env = gym.make("env-SPaRC-v0", puzzles=df, render_mode='human', traceback=True, max_steps=1000)
+env = gym.make("env-SPaRC-v1", puzzles=df, render_mode='human', traceback=True, max_steps=1000)
 
 # If you want to play the game using human inputs, use the play_human function. 
 # render_mode can now be set to either 'human' or 'llm' and both will work.
