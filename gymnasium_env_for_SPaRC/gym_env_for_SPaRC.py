@@ -25,7 +25,7 @@ class Actions(Enum):
 
 class GymEnvSPaRC(gym.Env):
     metadata = {"render_modes": ["human", "llm"], "render_fps": 30}
-    def __init__(self, puzzles=None, render_mode=None, traceback=False, max_steps=2000):
+    def __init__(self, puzzles=None, render_mode=None, observation='new', traceback=False, max_steps=2000):
         '''
         Function to initialize the Witness Environment, processes the puzzles dataset,
         and loads the first puzzle from the dataset
@@ -34,6 +34,7 @@ class GymEnvSPaRC(gym.Env):
         A pandas DataFrame containing the puzzles to be used in the environment.
         '''
         self.render_mode = render_mode
+        self.observation = observation
         self.traceback = traceback
         self.max_steps = max_steps
 
@@ -82,7 +83,9 @@ class GymEnvSPaRC(gym.Env):
             
         obs_array : dict; Dictionary of 2D arrays
             The observation array of the puzzle
-            
+        or if observation == 'SPaRC':
+            The observation array in SPaRC format
+        
         unique_properties : int
             The number of unique properties(star,polyshape, Co.) in the puzzle
         
@@ -110,6 +113,9 @@ class GymEnvSPaRC(gym.Env):
         self.obs_array = puzzle['obs_array']
         self.color_array = puzzle['color_array']
         self.additional_info = puzzle['additional_info']
+        
+        if self.observation == 'SPaRC':
+            self.observ = puzzle['observ']
                 
         self.start_location = puzzle['start_location']
         self.target_location = puzzle['target_location']
@@ -131,13 +137,22 @@ class GymEnvSPaRC(gym.Env):
         self.obs_array['target_location'][self._target_location[0], self._target_location[1]] = 1
         
         # Define the observation space for the environment
-        keys = list(self.obs_array.keys())
-        self.observation_space = spaces.Dict({
-            'base': spaces.Dict({key: spaces.Box(low=0, high=1, shape=(self.y_size, self.x_size), dtype=np.int32) for key in keys}),
-            'color': spaces.Box(low=0, high=8, shape=(self.y_size, self.x_size), dtype=np.int32),
-            'additional_info': spaces.Box(low=0, high=143632, shape=(self.y_size, self.x_size), dtype=np.int64)
-        })
+        if self.observation == 'new':
+            keys = list(self.obs_array.keys())
+            self.observation_space = spaces.Dict({
+                'base': spaces.Dict({key: spaces.Box(low=0, high=1, shape=(self.y_size, self.x_size), dtype=np.int32) for key in keys}),
+                'color': spaces.Box(low=0, high=8, shape=(self.y_size, self.x_size), dtype=np.int32),
+                'additional_info': spaces.Box(low=0, high=143632, shape=(self.y_size, self.x_size), dtype=np.int64)
+            })
         
+        elif self.observation == 'SPaRC':
+            max_length = sum(len(tok) for row in self.observ for tok in row) \
+            + (self.observ.shape[1]-1)*self.observ.shape[0] + (self.observ.shape[0]-1)
+            self.observation_space = spaces.Text(max_length=max_length)
+
+        else:
+            raise ValueError("Invalid observation type. Choose 'new' or 'SPaRC'.")
+
         # Define the action space (4 discrete actions: right, up, left, down)
         self.action_space = gym.spaces.Discrete(4)
         # Map actions to directions 
@@ -288,16 +303,25 @@ class GymEnvSPaRC(gym.Env):
             puzzle.update({'obs_array': obs_array})
             puzzle.update({'color_array': color_array})
             puzzle.update({'additional_info': additional_info})
-            
+
+            # If using the SPaRC observation format
+            if self.observation == 'SPaRC':
+                observ = df['puzzle_array'][i]
+                puzzle.update({'observ': observ})
+
             # Add the processed puzzle to the list
             puzzles.append(puzzle)
         
         return puzzles
     
+    def _grid_to_text(grid):
+        return "\n".join(" ".join(str(cell) for cell in row) for row in grid)
     
     def _get_obs(self):
         '''
         Function to return the current observation of the puzzle
+        if observation == 'new':
+        
         Returns: dictionary of:
         dictionary of 2D arrays,
         2D array,
@@ -311,9 +335,20 @@ class GymEnvSPaRC(gym.Env):
         additional_info : 2D array
             A 2D array containing additional information about the properties in the puzzle
         }
+
+        if observation == 'SPaRC':
+        Returns a string representation of the puzzle in the SPaRC format
         '''
-        return {'base': self.obs_array, 'color': self.color_array, 'additional_info': self.additional_info}
-             
+        if self.observation == 'new':
+            return {'base': self.obs_array, 'color': self.color_array, 'additional_info': self.additional_info}
+        
+        elif self.observation == 'SPaRC':
+            observ = self._grid_to_text(self.obs_array)
+            return {'observ': observ}
+        
+        else:
+            raise ValueError("Invalid observation type. Choose 'new' or 'SPaRC'.")
+
     def _get_info(self):
         '''
         Function to return extra information of the current puzzle
@@ -448,20 +483,40 @@ class GymEnvSPaRC(gym.Env):
                         self.obs_array['agent_location'][self._agent_location[0]][self._agent_location[1]] = 0
                         self.obs_array['visited'][self._agent_location[0]][self._agent_location[1]] = 0
                         self._agent_location = agent_location_temp
+
+                        # Update the SPaRC observation if it is active
+                        if self.observation == 'SPaRC':
+                            if self.obs_array['gaps'][self._agent_location[0]][self._agent_location[1]] == 1:
+                                self.observ = [self._agent_location[1], self._agent_location[0]] = '.'
+                            else:
+                                self.observ = [self._agent_location[1], self._agent_location[0]] = '+'
                         
                         # Update the agent's location in the observation
                         self.obs_array['visited'][self._agent_location[0]][self._agent_location[1]] = 1
                         self.obs_array['agent_location'][self._agent_location[0]][self._agent_location[1]] = 1
-                        
+
+                        # Also update the SPaRC observation if it is active
+                        if self.observation == 'SPaRC':
+                            self.observ[self._agent_location[1]][self._agent_location[0]] = 'L'
+
                         # Update the path
                         del self.path[-1]
             else:
                 self.obs_array['agent_location'][self._agent_location[0]][self._agent_location[1]] = 0
+
+                # Update the SPaRC observation if it is active
+                if self.observation == 'SPaRC':
+                    self.observ[self._agent_location[1]][self._agent_location[0]] = 'V'
+
                 self._agent_location = agent_location_temp
                 
                 # Update the agent's location in the observation
                 self.obs_array['visited'][self._agent_location[0]][self._agent_location[1]] = 1
                 self.obs_array['agent_location'][self._agent_location[0]][self._agent_location[1]] = 1
+
+                # Also update the SPaRC observation if it is active
+                if self.observation == 'SPaRC':
+                    self.observ[self._agent_location[1]][self._agent_location[0]] = 'L'
                 
                 # Update the path
                 path = [self._agent_location[1], self._agent_location[0]]
