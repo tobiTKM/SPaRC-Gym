@@ -115,8 +115,18 @@ class GymEnvSPaRC(gym.Env):
         self.additional_info = puzzle['additional_info']
         
         if self.observation == 'SPaRC':
-            self.observ = puzzle['observ']
-                
+            raw = puzzle['observ']
+            if isinstance(raw, np.ndarray) and raw.dtype == object and raw.ndim == 1:
+                grid_rows = [r.astype(str).tolist() for r in raw]
+            elif isinstance(raw, np.ndarray) and raw.ndim == 2:
+                grid_rows = raw.astype(str).tolist()
+            else:
+                grid_rows = [[str(c) for c in row] for row in raw]
+            w = len(grid_rows[0])
+            if any(len(r) != w for r in grid_rows):
+                raise ValueError("Non-rectangular SPaRC grid")
+            self.observ = grid_rows
+
         self.start_location = puzzle['start_location']
         self.target_location = puzzle['target_location']
         
@@ -146,9 +156,13 @@ class GymEnvSPaRC(gym.Env):
             })
         
         elif self.observation == 'SPaRC':
-            max_length = sum(len(tok) for row in self.observ for tok in row) \
-            + (self.observ.shape[1]-1)*self.observ.shape[0] + (self.observ.shape[0]-1)
-            self.observation_space = spaces.Text(max_length=max_length)
+            text = self._grid_to_text(self.observ)
+            tokens = {ch for row in self.observ for tok in row for ch in tok}
+            tokens.update(list("LV .\n"))
+            charset = "".join(sorted(tokens))
+            max_length = len(text)
+            self._charset = charset
+            self.observation_space = spaces.Text(max_length=max_length, charset=charset)
 
         else:
             raise ValueError("Invalid observation type. Choose 'new' or 'SPaRC'.")
@@ -295,11 +309,11 @@ class GymEnvSPaRC(gym.Env):
             x_size = x_size - 1
             y_size = y_size - 1
             # Mark all the green cells as gaps
-            for i in range(x_size):
+            for k in range(x_size):
                 for j in range(y_size):
-                    if i % 2 == 1 and j % 2 == 1:
-                        obs_array['gaps'][j, i] = 1
-            
+                    if k % 2 == 1 and j % 2 == 1:
+                        obs_array['gaps'][j, k] = 1
+
             puzzle.update({'obs_array': obs_array})
             puzzle.update({'color_array': color_array})
             puzzle.update({'additional_info': additional_info})
@@ -314,7 +328,7 @@ class GymEnvSPaRC(gym.Env):
         
         return puzzles
     
-    def _grid_to_text(grid):
+    def _grid_to_text(self, grid):
         return "\n".join(" ".join(str(cell) for cell in row) for row in grid)
     
     def _get_obs(self):
@@ -343,8 +357,8 @@ class GymEnvSPaRC(gym.Env):
             return {'base': self.obs_array, 'color': self.color_array, 'additional_info': self.additional_info}
         
         elif self.observation == 'SPaRC':
-            observ = self._grid_to_text(self.obs_array)
-            return {'observ': observ}
+            text = self._grid_to_text(self.observ)
+            return text
         
         else:
             raise ValueError("Invalid observation type. Choose 'new' or 'SPaRC'.")
@@ -482,22 +496,22 @@ class GymEnvSPaRC(gym.Env):
                         # If the next location is already visited and is the last location, we are allowed to move back
                         self.obs_array['agent_location'][self._agent_location[0]][self._agent_location[1]] = 0
                         self.obs_array['visited'][self._agent_location[0]][self._agent_location[1]] = 0
-                        self._agent_location = agent_location_temp
-
+                        
                         # Update the SPaRC observation if it is active
                         if self.observation == 'SPaRC':
-                            if self.obs_array['gaps'][self._agent_location[0]][self._agent_location[1]] == 1:
-                                self.observ = [self._agent_location[1], self._agent_location[0]] = '.'
-                            else:
-                                self.observ = [self._agent_location[1], self._agent_location[0]] = '+'
+                            r, c = self._agent_location[0], self._agent_location[1]
+                            self.observ[r][c] = '.' if self.obs_array['gaps'][r, c] == 1 else '+'                        
                         
+                        self._agent_location = agent_location_temp
+
                         # Update the agent's location in the observation
                         self.obs_array['visited'][self._agent_location[0]][self._agent_location[1]] = 1
                         self.obs_array['agent_location'][self._agent_location[0]][self._agent_location[1]] = 1
 
                         # Also update the SPaRC observation if it is active
                         if self.observation == 'SPaRC':
-                            self.observ[self._agent_location[1]][self._agent_location[0]] = 'L'
+                            r, c = self._agent_location[0], self._agent_location[1]
+                            self.observ[r][c] = 'L'
 
                         # Update the path
                         del self.path[-1]
@@ -506,7 +520,8 @@ class GymEnvSPaRC(gym.Env):
 
                 # Update the SPaRC observation if it is active
                 if self.observation == 'SPaRC':
-                    self.observ[self._agent_location[1]][self._agent_location[0]] = 'V'
+                    r, c = self._agent_location[0], self._agent_location[1]
+                    self.observ[r][c] = 'V'
 
                 self._agent_location = agent_location_temp
                 
@@ -516,8 +531,9 @@ class GymEnvSPaRC(gym.Env):
 
                 # Also update the SPaRC observation if it is active
                 if self.observation == 'SPaRC':
-                    self.observ[self._agent_location[1]][self._agent_location[0]] = 'L'
-                
+                    r, c = self._agent_location[0], self._agent_location[1]
+                    self.observ[r][c] = 'L'
+
                 # Update the path
                 path = [self._agent_location[1], self._agent_location[0]]
                 self.path.append(path)

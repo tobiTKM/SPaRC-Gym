@@ -60,4 +60,3 @@ def play_human(env, i=1):
                 running = False
                 print("Episode finished")
                 return obs, reward, info
-            
