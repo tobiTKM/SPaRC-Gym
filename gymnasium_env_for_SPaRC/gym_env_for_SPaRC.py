@@ -1,4 +1,5 @@
 from enum import Enum
+import json
 import gymnasium as gym
 from gymnasium import spaces
 import pygame
@@ -156,12 +157,11 @@ class GymEnvSPaRC(gym.Env):
             })
         
         elif self.observation == 'SPaRC':
-            text = self._grid_to_text(self.observ)
-            tokens = {ch for row in self.observ for tok in row for ch in tok}
-            tokens.update(list("LV .\n"))
-            charset = "".join(sorted(tokens))
-            max_length = len(text)
-            self._charset = charset
+            init_json = self._build_json_obs()
+            overlay_chars = set("LV.")
+            charset = "".join(sorted(set(init_json) | overlay_chars))
+            max_length = int(len(init_json) * 2)
+            self._json_charset = charset
             self.observation_space = spaces.Text(max_length=max_length, charset=charset)
 
         else:
@@ -327,10 +327,13 @@ class GymEnvSPaRC(gym.Env):
             puzzles.append(puzzle)
         
         return puzzles
-    
-    def _grid_to_text(self, grid):
-        return "\n".join(" ".join(str(cell) for cell in row) for row in grid)
-    
+
+    def _build_json_obs(self):
+        '''
+        Helper Function to turn the SPaRC observation into JSON format
+        '''
+        return json.dumps(self.observ, separators=(',', ':'))
+
     def _get_obs(self):
         '''
         Function to return the current observation of the puzzle
@@ -351,15 +354,15 @@ class GymEnvSPaRC(gym.Env):
         }
 
         if observation == 'SPaRC':
-        Returns a string representation of the puzzle in the SPaRC format
+        Returns a json string representation of the puzzle in the SPaRC format
         '''
         if self.observation == 'new':
             return {'base': self.obs_array, 'color': self.color_array, 'additional_info': self.additional_info}
         
         elif self.observation == 'SPaRC':
-            text = self._grid_to_text(self.observ)
-            return text
-        
+            observ = self._build_json_obs()
+            return observ
+
         else:
             raise ValueError("Invalid observation type. Choose 'new' or 'SPaRC'.")
 
