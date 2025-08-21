@@ -1,11 +1,13 @@
 from enum import Enum
 import json
+from collections import Counter, deque
 import gymnasium as gym
 from gymnasium import spaces
 import pygame
 import numpy as np
 import yaml
 import math
+from dataclasses import dataclass
 from .render import HumanRenderer, LLMRenderer
 
 class Actions(Enum):
@@ -23,6 +25,22 @@ class Actions(Enum):
     left = 2
     down = 3
     
+
+@dataclass
+class RegionData:
+    id: int
+    cells: list    
+    area: int
+    symbols: dict     
+    colors: dict         
+
+    def to_summary(self):
+        return {
+            "id": self.id,
+            "area": self.area,
+            "symbol_counts": {k: len(v) for k, v in self.symbols.items()},
+            "colors": self.colors
+        }
 
 class GymEnvSPaRC(gym.Env):
     metadata = {"render_modes": ["human", "llm"], "render_fps": 30}
@@ -51,6 +69,8 @@ class GymEnvSPaRC(gym.Env):
         self.puzzles = puzzles if puzzles is not None else ValueError("No puzzles provided")
         self.current_puzzle_index = 0
         self.current_step = 0
+        
+        self.rule_status = {}
         
         # Process the puzzles to extract relevant information
         self.puzzles = self.process_puzzles(self.puzzles)
@@ -139,9 +159,13 @@ class GymEnvSPaRC(gym.Env):
         self.normal_reward = 0
         self.outcome_reward = 0
         
+        self.rule_status = {}
+        
         self._agent_location = np.array([self.start_location[1], self.start_location[0]], dtype=np.int32)
         self._target_location = np.array([self.target_location[1], self.target_location[0]], dtype=np.int32)
 
+        self.validate_rules(terminated=False, truncated=False)
+        
         # Mark the starting location as visited and set the agent's and target's positions in the observation array
         self.obs_array['visited'][self._agent_location[0], self._agent_location[1]] = 1
         self.obs_array['agent_location'][self._agent_location[0], self._agent_location[1]] = 1
@@ -333,7 +357,368 @@ class GymEnvSPaRC(gym.Env):
         Helper Function to turn the SPaRC observation into JSON format
         '''
         return json.dumps(self.observ, separators=(',', ':'))
+    
+    
+    def _cell_index_grid(self):
+        '''
+        Helper Function for _compute_regions
+        Generate a mask for Rule cells.
+        '''
+        
+        visited = self.obs_array['visited']
+        h, w = visited.shape
+        mask = np.zeros((h, w), dtype=bool)
+        for y in range(h):
+            for x in range(w):
+                if y % 2 == 1 and x % 2 == 1:
+                    mask[y, x] = True
+                    
+        return mask
+    
+    def _cell_index_grid2(self):
+        '''
+        Helper Function for _compute_regions
+        Generate a mask for visited cells and gaps.
+        '''
+        
+        visited = self.obs_array['visited']
+        gaps = self.obs_array['gaps']
+        h, w = visited.shape
+        mask = np.zeros((h, w), dtype=bool)
+        path_nodes = {tuple(p[::-1]) for p in self.path}
+        for y in range(h):
+            for x in range(w):
+                if gaps[y, x] == 1:
+                    mask[y, x] = True
+                    
+        for y, x in path_nodes:
+            mask[y, x] = True
+            
+        return mask
+    
+    def _neighbours_cell(self, y, x, h, w):
+        """
+        Helper Function for _compute_regions
+        Generate neighboring cell coordinates (1 unit away) in the grid.
+        """
+        for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+            ny, nx = y + dy, x + dx
+            if 0 <= ny < h and 0 <= nx < w:
+                yield ny, nx
+    
 
+    def _compute_regions(self):
+        """
+        Flood-fill contiguous cell regions using the simplified mask.
+        Returns: list[RegionData], region_id_map (int array with -1 for non-cells)
+        """
+        mask = self._cell_index_grid()
+        mask2 = self._cell_index_grid2()
+        h, w = mask.shape
+        region_map = -1 * np.ones((h, w), dtype=np.int32)
+        regions = []
+        rid = 0
+
+        for y in range(h):
+            for x in range(w):
+                if mask[y, x] and region_map[y, x] == -1:
+                    enqueued_non_cells = np.zeros((h, w), dtype=bool)
+                    q = deque([(y, x)])
+                    region_map[y, x] = rid
+                    cells = []
+                    while q:
+                        cy, cx = q.popleft()
+                        if mask[cy, cx]:
+                            cells.append((cy, cx))
+                        for ny, nx in self._neighbours_cell(cy, cx, h, w):
+                            if mask[ny, nx] and region_map[ny, nx] == -1:
+                                region_map[ny, nx] = rid
+                                q.append((ny, nx))
+                            if not mask2[ny, nx] and not enqueued_non_cells[ny, nx]:
+                                enqueued_non_cells[ny, nx] = True
+                                q.append((ny, nx))
+                    regions.append(RegionData(id=rid, cells=cells, area=len(cells), symbols={}, colors={}))
+                    rid += 1
+                
+        return regions, region_map
+    
+    def _collect_region_symbols(self, regions, region_map):
+
+        if not regions:
+            return
+
+        # Build fast lookup
+        regions_by_id = {r.id: r for r in regions}
+        h, w = region_map.shape
+
+        skip_layers = {'visited', 'gaps', 'agent_location', 'target_location'}
+        for layer, arr in self.obs_array.items():
+            if layer in skip_layers:
+                continue
+            # Collect all coordinates where symbol appears
+            ys, xs = np.where(arr == 1)
+            for y, x in zip(ys, xs):
+                rid = region_map[y, x]
+                if rid == -1:
+                    continue
+                reg = regions_by_id[rid]
+                reg.symbols.setdefault(layer, []).append((y, x))
+                # Color info (if available)
+                color_val = self.color_array[y, x]
+                if color_val:
+                    reg.colors[color_val] = reg.colors.get(color_val, 0) + 1
+
+    
+    def _rule_reached_target(self):
+        return bool(np.array_equal(self._agent_location, self._target_location)), {
+            "agent_loc": self._agent_location.tolist(),
+            "target_loc": self._target_location.tolist()
+        }
+
+    def _rule_path_not_crossing(self):
+        path_nodes = [tuple(p[::-1]) for p in self.path]
+        counts = Counter(path_nodes)
+        dup = {k: v for k, v in counts.items() if v > 1}
+        return len(dup) == 0, {"duplicates": dup}
+
+    def _rule_no_gap_violations(self):
+        gaps = self.obs_array['gaps']
+        violations = []
+        for (x, y) in self.path:
+            gy, gx = y, x
+            if gaps[gy, gx] == 1:
+                violations.append((gx, gy))
+        return len(violations) == 0, {"violations": violations}
+
+    def _rule_all_dots_collected(self):
+        if 'dot' not in self.obs_array:
+            return True, {"total": 0, "collected": 0}
+        dot_mask = self.obs_array['dot'] == 1
+        visited = self.obs_array['visited'] == 1
+        total = int(dot_mask.sum())
+        collected = int((dot_mask & visited).sum())
+        return (total == 0) or (collected == total), {"total": total, "collected": collected}
+
+    def _rule_color_square_separation(self, regions):
+            """
+            All squares inside any single region must have same color;
+            different colors must be separated by path -> no region with >1 square color.
+            """
+            if 'square' not in self.obs_array:
+                return True, {"regions": []}
+            bad = []
+            details = []
+            for r in regions:
+                squares = r.symbols.get('square', [])
+                if not squares:
+                    continue
+                colors = set(self.color_array[y, x] for (y, x) in squares if self.color_array[y, x] != 0)
+                if len(colors) > 1:
+                    bad.append(r.id)
+                details.append({"region": r.id, "square_count": len(squares), "colors": list(colors)})
+            return len(bad) == 0, {"violating_regions": bad, "region_square_details": details}
+
+    def _rule_star_pairing_exact(self, regions):
+        """
+        Each star must share region with exactly one other same-color symbol.
+        => For each region: for each star color, count must be 0 or 2 (not 1, not >2).
+        """
+        if 'star' not in self.obs_array:
+            return True, {"regions": []}
+        violations = []
+        per_region = []
+        for r in regions:
+            star_coords = r.symbols.get('star', [])
+            if not star_coords:
+                continue
+            
+            color_counts_all = {}
+            for layer, coords in r.symbols.items():
+                for (y, x) in coords:
+                    c = self.color_array[y, x]
+                    if c == 0:
+                        continue
+                    color_counts_all[c] = color_counts_all.get(c, 0) + 1
+
+            star_colors = {}
+            for (y, x) in star_coords:
+                c = self.color_array[y, x]
+                if c == 0:
+                    violations.append({"region": r.id, "color": 0, "found_total": 1})
+                    continue
+                star_colors[c] = star_colors.get(c, 0) + 1
+
+            region_ok = True
+            region_star_details = []
+            for c, star_count in star_colors.items():
+                total_c = color_counts_all.get(c, 0)
+                ok = (total_c == 2)
+                if not ok:
+                    region_ok = False
+                    violations.append({
+                        "region": r.id,
+                        "color": c,
+                        "found_total": total_c,
+                        "star_cells": star_count
+                    })
+                region_star_details.append({
+                    "color": c,
+                    "total_symbols_of_color": total_c,
+                    "star_cells": star_count,
+                    "ok": ok
+                })
+
+            per_region.append({
+                "region": r.id,
+                "details": region_star_details,
+                "all_ok": region_ok
+            })
+
+        return len(violations) == 0, {
+            "violations": violations,
+            "per_region": per_region
+        }
+
+
+    def _rule_triangles_edges(self):
+        """
+        For each triangle cell: required count == number of touched edges.
+        """
+        if 'triangle' not in self.obs_array:
+            return True, {"mismatches": []}
+        tri = self.obs_array['triangle']
+        h, w = tri.shape
+        mismatches = []
+        for y in range(1, h-1):
+            for x in range(1, w-1):
+                if tri[y, x] == 1:
+                    required = int(self.additional_info[y, x])
+                    if required <= 0:
+                        continue
+                    touches = self._triangle_touches(y, x)
+                    if touches != required:
+                        mismatches.append({"y": y, "x": x, "required": required, "touches": touches})
+        return len(mismatches) == 0, {"mismatches": mismatches}
+    
+    def _triangle_touches(self, tri_y, tri_x):
+        path_nodes = {(p[1], p[0]) for p in self.path}
+        neighbor_nodes = [
+            (tri_y, tri_x + 1),
+            (tri_y, tri_x - 1),
+            (tri_y - 1, tri_x),
+            (tri_y + 1, tri_x)
+        ]
+        return sum(1 for n in neighbor_nodes if n in path_nodes)
+
+    def _rule_poly_ylop_balance(self, regions):
+        """
+        For each region:
+          sum(poly areas) - sum(ylop areas) MUST equal region.area
+        (No rotation/mirroring: we only use areas; shape fit not yet enforced.)
+        Additionally, aggregate all instances per region must not result negative or exceed area.
+        """
+        instances = self._extract_poly_instances()
+        if not instances:
+            return True, {"regions": []}
+        # Map each instance to region
+        _, region_map = self._compute_regions()
+        region_acc = {}
+        for inst in instances:
+            rid = region_map[inst["y"], inst["x"]] if 0 <= inst["y"] < region_map.shape[0] and 0 <= inst["x"] < region_map.shape[1] else -1
+            if rid == -1:
+                continue
+            region_acc.setdefault(rid, {"poly_area": 0, "ylop_area": 0, "instances": []})
+            if inst["kind"] == 'poly':
+                region_acc[rid]["poly_area"] += inst["area"]
+            else:
+                region_acc[rid]["ylop_area"] += inst["area"]
+            region_acc[rid]["instances"].append(inst)
+
+        violations = []
+        region_details = []
+        regions_by_id = {r.id: r for r in regions}
+        for rid, data in region_acc.items():
+            region_area = regions_by_id[rid].area if rid in regions_by_id else None
+            net = data["poly_area"] - data["ylop_area"]
+            ok = (region_area == net)
+            if not ok:
+                violations.append({"region": rid, "region_area": region_area, "poly_area": data["poly_area"],
+                                   "ylop_area": data["ylop_area"], "net": net})
+            region_details.append({"region": rid, **data, "region_area": region_area, "net": net})
+        return len(violations) == 0, {"violations": violations, "region_details": region_details,
+                                      "note": "Area-only check; exact tiling & no rotation/mirror not yet enforced."}
+
+    def _extract_poly_instances(self):
+        """
+        Helper Function for _rule_poly_ylop_balance
+        Extracts instances of polyshapes and ylop shapes from the additional_info array.
+        """
+        instances = []
+        if not isinstance(self.polyshapes, dict):
+            return instances
+        h, w = self.additional_info.shape
+        for y in range(h):
+            for x in range(w):
+                val = self.additional_info[y, x]
+                if val != 0:
+                    name = f'{val}'
+                    if name not in self.polyshapes:
+                        continue
+                    shape_arr = np.array(self.polyshapes[name])
+                    area = int(shape_arr.sum())
+                    kind = 'poly' if (self.obs_array['poly'][y, x] == 1) else 'ylop'
+                    instances.append({"name": name, "y": y, "x": x, "area": area, "kind": kind})
+        return instances
+
+    def _run_rule_validators(self, regions, terminated, truncated):
+
+        rule_results = {}
+
+        def add(name, passed, detail):
+            rule_results[name] = {"passed": passed, "detail": detail}
+
+        # Global / path related
+        p, d = self._rule_reached_target()
+        add("reached_target", p, d)
+        p, d = self._rule_path_not_crossing()
+        add("path_not_crossing", p, d)
+        p, d = self._rule_no_gap_violations()
+        add("no_gap_violations", p, d)
+        p, d = self._rule_all_dots_collected()
+        add("all_dots_collected", p, d)
+
+        # Region & symbol based
+        p, d = self._rule_color_square_separation(regions)
+        add("square_color_separation", p, d)
+        p, d = self._rule_star_pairing_exact(regions)
+        add("star_pairing_exact", p, d)
+        p, d = self._rule_triangles_edges()
+        add("triangles_edge_count", p, d)
+        p, d = self._rule_poly_ylop_balance(regions)
+        add("poly_ylop_area", p, d)
+
+        # Aggregate success (only core puzzle rules, not termination flags)
+        core = [k for k in rule_results.keys()
+                if k not in ("_terminated", "_truncated", "all_rules_satisfied")]
+        all_pass = all(rule_results[k]["passed"] for k in core)
+        add("all_rules_satisfied", all_pass, {"rules_checked": core})
+
+        rule_results["_terminated"] = {"passed": True, "detail": terminated}
+        rule_results["_truncated"] = {"passed": True, "detail": truncated}
+        return rule_results
+
+    def _validate_rules(self, terminated=False, truncated=False):
+        regions, region_map = self._compute_regions()
+        self._collect_region_symbols(regions, region_map)
+        self.rule_status = self._run_rule_validators(regions, terminated, truncated)
+        # Attach region summaries
+        self.rule_status["_regions"] = {r.id: r.to_summary() for r in regions}
+        return self.rule_status
+
+    def validate_rules(self, terminated=False, truncated=False):
+        return self._validate_rules(terminated=terminated, truncated=truncated)
+
+    
     def _get_obs(self):
         '''
         Function to return the current observation of the puzzle
@@ -380,6 +765,7 @@ class GymEnvSPaRC(gym.Env):
             - legal_actions: The legal actions for the current state of the agent
             - current_step: The current step of the agent
         '''
+        self.validate_rules(terminated=False, truncated=False)
         info = {"solution_count": self.solution_count,
         "difficulty": self.difficulty,
         "grid_y_size": self.y_size,
@@ -387,6 +773,7 @@ class GymEnvSPaRC(gym.Env):
         "legal_actions": self.get_legal_actions(),
         "current_step": self.current_step,
         "agent_location": self._agent_location,
+        "rule_status": self.rule_status,
         "Rewards": {"normal_reward": self.normal_reward, "outcome_reward": self.outcome_reward}
         }
         return info
@@ -573,6 +960,7 @@ class GymEnvSPaRC(gym.Env):
 
         
         # Update the observation
+        self.validate_rules(terminated=terminated, truncated=truncated)
         observation = self._get_obs()
         info = self._get_info()
 
