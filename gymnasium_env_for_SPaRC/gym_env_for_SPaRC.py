@@ -3,10 +3,8 @@ import json
 from collections import Counter, deque
 import gymnasium as gym
 from gymnasium import spaces
-import pygame
 import numpy as np
 import yaml
-import math
 from dataclasses import dataclass
 from .render import HumanRenderer, LLMRenderer
 
@@ -76,7 +74,10 @@ class GymEnvSPaRC(gym.Env):
         self.puzzles = self.process_puzzles(self.puzzles)
         # Load the first puzzle
         self._load_puzzle(self.current_puzzle_index) 
-       
+
+
+    # ---------- Puzzle Processing/Loading Functions ----------
+
     def _load_puzzle(self, index):
         '''
         Function to load a puzzle from the dataset
@@ -352,12 +353,9 @@ class GymEnvSPaRC(gym.Env):
         
         return puzzles
 
-    def _build_json_obs(self):
-        '''
-        Helper Function to turn the SPaRC observation into JSON format
-        '''
-        return json.dumps(self.observ, separators=(',', ':'))
-    
+    # ---------- End Puzzle Processing/Loading Functions ----------
+
+    # ---------- Compute Regions Functions ----------
     
     def _cell_index_grid(self):
         '''
@@ -468,6 +466,9 @@ class GymEnvSPaRC(gym.Env):
                 if color_val:
                     reg.colors[color_val] = reg.colors.get(color_val, 0) + 1
 
+    # ---------- End Compute Regions Functions ----------
+
+    # ---------- Rule Check Functions ----------
     
     def _rule_reached_target(self):
         return bool(np.array_equal(self._agent_location, self._target_location)), {
@@ -612,42 +613,72 @@ class GymEnvSPaRC(gym.Env):
 
     def _rule_poly_ylop_balance(self, regions):
         """
-        For each region:
-          sum(poly areas) - sum(ylop areas) MUST equal region.area
-        (No rotation/mirroring: we only use areas; shape fit not yet enforced.)
-        Additionally, aggregate all instances per region must not result negative or exceed area.
+        Combined check:
+         - area_ok: sum(poly) - sum(ylop) == region.area
+         - exact_ok: shapes can be placed exactly (no rotation/mirror) inside region
+        Rule passes only if both are True for all regions that contain any poly/ylop.
         """
         instances = self._extract_poly_instances()
         if not instances:
             return True, {"regions": []}
-        # Map each instance to region
-        _, region_map = self._compute_regions()
-        region_acc = {}
-        for inst in instances:
-            rid = region_map[inst["y"], inst["x"]] if 0 <= inst["y"] < region_map.shape[0] and 0 <= inst["x"] < region_map.shape[1] else -1
-            if rid == -1:
-                continue
-            region_acc.setdefault(rid, {"poly_area": 0, "ylop_area": 0, "instances": []})
-            if inst["kind"] == 'poly':
-                region_acc[rid]["poly_area"] += inst["area"]
-            else:
-                region_acc[rid]["ylop_area"] += inst["area"]
-            region_acc[rid]["instances"].append(inst)
 
+        # Map instances to regions
+        _, region_map = self._compute_regions()
+        by_region = {}
+        for inst in instances:
+            y, x = inst["y"], inst["x"]
+            if 0 <= y < region_map.shape[0] and 0 <= x < region_map.shape[1]:
+                rid = region_map[y, x]
+                if rid != -1:
+                    by_region.setdefault(rid, []).append(inst)
+
+        regions_by_id = {r.id: r for r in regions}
         violations = []
         region_details = []
-        regions_by_id = {r.id: r for r in regions}
-        for rid, data in region_acc.items():
-            region_area = regions_by_id[rid].area if rid in regions_by_id else None
-            net = data["poly_area"] - data["ylop_area"]
-            ok = (region_area == net)
-            if not ok:
-                violations.append({"region": rid, "region_area": region_area, "poly_area": data["poly_area"],
-                                   "ylop_area": data["ylop_area"], "net": net})
-            region_details.append({"region": rid, **data, "region_area": region_area, "net": net})
-        return len(violations) == 0, {"violations": violations, "region_details": region_details,
-                                      "note": "Area-only check; exact tiling & no rotation/mirror not yet enforced."}
 
+        for rid, lst in by_region.items():
+            region = regions_by_id.get(rid)
+            if region is None:
+                continue
+
+            # area check
+            poly_area = sum(inst["area"] for inst in lst if inst["kind"] == "poly")
+            ylop_area = sum(inst["area"] for inst in lst if inst["kind"] == "ylop")
+            net = poly_area - ylop_area
+            area_ok = (region.area == net)
+
+            detail = {
+                "region": rid,
+                "area_check": {
+                    "region_area": region.area,
+                    "poly_area": poly_area,
+                    "ylop_area": ylop_area,
+                    "net": net,
+                    "ok": area_ok
+                }
+            }
+
+            # exact-fit (only attempt if area looks right)
+            if area_ok:
+                exact_ok, exact_det = self._polyfit_region_exact(region, lst)
+            else:
+                exact_ok, exact_det = False, {"skipped": True}
+
+            detail["exact_fit"] = {"ok": exact_ok, **exact_det}
+            detail["ok"] = area_ok and exact_ok
+            region_details.append(detail)
+
+        violations = [d["region"] for d in region_details if not d["ok"]]
+
+        return len(violations) == 0, {
+            "violations": violations,
+            "region_details": region_details
+        }
+    
+    # ---------- End Rule Check Functions ----------
+        
+    # ---------- Poly/Ylop helpers ----------
+        
     def _extract_poly_instances(self):
         """
         Helper Function for _rule_poly_ylop_balance
@@ -669,6 +700,153 @@ class GymEnvSPaRC(gym.Env):
                     kind = 'poly' if (self.obs_array['poly'][y, x] == 1) else 'ylop'
                     instances.append({"name": name, "y": y, "x": x, "area": area, "kind": kind})
         return instances
+    
+    def _polyfit_region_exact(self, region, instances):
+        
+        H, W = self.y_size, self.x_size
+
+        region_center_mask = np.zeros((H, W), dtype=bool)
+        for (ry, rx) in region.cells:
+            region_center_mask[ry, rx] = True
+        region_size = int(region_center_mask[1::2, 1::2].sum())
+
+        polys, ylops = [], []
+        poly_area = 0
+        ylop_area = 0
+        for inst in instances:
+            name = inst["name"]
+            arr = np.array(self.polyshapes[name], dtype=np.int32)
+            area = int(arr.sum())
+            if inst["kind"] == "poly":
+                polys.append({"name": name, "array": arr})
+                poly_area += area
+            else:
+                ylops.append({"name": name, "array": arr})
+                ylop_area += area
+
+        net = poly_area - ylop_area
+
+        # If ylops cancel polys exactly, geometry poses no constraint
+        if net == 0: 
+            poly_names = Counter(p["name"] for p in polys)
+            ylop_names = Counter(y["name"] for y in ylops)
+            if poly_names == ylop_names:
+                return True, {
+                    "region_id": region.id,
+                    "region_area": region_size,
+                    "poly_area": poly_area,
+                    "ylop_area": ylop_area,
+                    "net": net
+                }
+        
+        grid = np.zeros((H, W), dtype=np.int32)
+        if net > 0:
+            grid[region_center_mask] = -1
+
+        anchors_all = [(x, y) for y in range(1, H, 2) for x in range(1, W, 2)]
+
+        ok = self._polyfit_place_ylops(ylops, 0, polys, grid, anchors_all)
+
+        return ok, {
+            "region_id": region.id,
+            "region_area": region_size,
+            "poly_area": poly_area,
+            "ylop_area": ylop_area,
+            "net": net
+        }
+        
+    def _polyfit_place_ylops(self, ylops, idx, polys, grid, anchors):
+
+        if idx == len(ylops):
+            # hand over to poly placement (to be implemented next)
+            return self._polyfit_place_polys(polys, grid)
+
+        ylop = ylops[idx]
+        arr_o = ylop["array"]
+
+        offsets = self._get_offsets(arr_o)
+        for (ax, ay) in anchors:
+            if not self._try_place_polys(grid, offsets, ax, ay, sign=-1):
+                continue
+
+            if self._polyfit_place_ylops(ylops, idx + 1, polys, grid, anchors):
+                return True
+
+            self._unplace_offsets(grid, offsets, ax, ay, sign=-1)
+
+        return False
+
+    def _polyfit_place_polys(self, polys, grid):
+
+        if np.any(grid > 0):
+            return False
+
+        if not polys:
+            return not np.any(grid < 0)
+
+        negs = np.argwhere((grid < 0))
+        if negs.size == 0:
+            return True
+        ny, nx = negs[np.lexsort((negs[:,1], negs[:,0]))][0]
+        target = [(int(nx), int(ny))]
+
+        for (ax, ay) in target:
+            tried_names = set()
+            for i, poly in enumerate(polys):
+                name = poly["name"]
+                if name in tried_names:
+                    continue
+                tried_names.add(name)
+
+                arr_o = poly["array"]
+                offsets = self._get_offsets(arr_o)
+                if not self._try_place_polys(grid, offsets, ax, ay, sign=+1):
+                    continue
+
+                rem = polys[:i] + polys[i+1:]
+                if self._polyfit_place_polys(rem, grid):
+                    return True
+
+                self._unplace_offsets(grid, offsets, ax, ay, sign=+1)
+
+        return False
+
+
+    def _get_offsets(self, shape_arr):
+        shape = np.array(shape_arr, dtype=np.int32)
+        ys, xs = np.where(shape == 1)
+        if len(ys) == 0:
+            return []
+        ay = ys.min()
+        ax = xs[np.where(ys == ay)[0]].min()
+        offsets = []
+        for y, x in zip(ys, xs):
+            cx = 2 * (x - ax)
+            cy = 2 * (y - ay)
+            offsets.append((cx, cy))
+        return offsets
+
+
+    def _try_place_polys(self, grid, offsets, anchor_x, anchor_y, sign):
+        H, W = grid.shape
+        targets = []
+        for dx, dy in offsets:
+            tx, ty = anchor_x + dx, anchor_y + dy
+            if ty < 0 or ty >= H or tx < 0 or tx >= W:
+                return False
+            targets.append((tx, ty))
+        for tx, ty in targets:
+            grid[ty, tx] += sign
+        return True
+    
+    def _unplace_offsets(self, grid, offsets, anchor_x, anchor_y, sign):
+        for dx, dy in offsets:
+            tx, ty = anchor_x + dx, anchor_y + dy
+            grid[ty, tx] -= sign
+    
+    # ---------- End Poly/Ylop helpers ----------
+    
+    # ---------- Validate Rules Functions ----------
 
     def _run_rule_validators(self, regions, terminated, truncated):
 
@@ -718,7 +896,10 @@ class GymEnvSPaRC(gym.Env):
     def validate_rules(self, terminated=False, truncated=False):
         return self._validate_rules(terminated=terminated, truncated=truncated)
 
-    
+    # ---------- End Validate Rules Functions ----------
+
+    # ---------- Get Observation/Info Functions ----------
+
     def _get_obs(self):
         '''
         Function to return the current observation of the puzzle
@@ -751,6 +932,12 @@ class GymEnvSPaRC(gym.Env):
         else:
             raise ValueError("Invalid observation type. Choose 'new' or 'SPaRC'.")
 
+    def _build_json_obs(self):
+        '''
+        Helper Function to turn the SPaRC observation into JSON format
+        '''
+        return json.dumps(self.observ, separators=(',', ':'))
+    
     def _get_info(self):
         '''
         Function to return extra information of the current puzzle
@@ -806,7 +993,11 @@ class GymEnvSPaRC(gym.Env):
                         legal.append(action)
             
         return legal
-    
+
+    # ---------- End Get Observation/Info Functions ----------
+
+    # ---------- Core Gym Env Functions ----------
+
     def reset(self, seed=None, options=None):
         '''
         Function to reset the environment and load the next puzzle
@@ -954,7 +1145,7 @@ class GymEnvSPaRC(gym.Env):
             if not np.array_equal(orig_loc, self._agent_location):
                 for i in range(self.solution_count):
                     current_solution_path = self.solution_paths[i]
-                    if self.is_on_solution_path(self.path, current_solution_path):
+                    if self._is_on_solution_path(self.path, current_solution_path):
                         self.normal_reward += 0.01
                         break
 
@@ -972,9 +1163,14 @@ class GymEnvSPaRC(gym.Env):
             self.render()
         
         return observation, reward, terminated, truncated, info
-    
-    def is_on_solution_path(self, current_path, solution_path):
+
+
+    # ---------- End Core Gym Env Functions ----------
+
+
+    def _is_on_solution_path(self, current_path, solution_path):
         """
+        Helper function for step function.
         Checks if the current path is still on the solution path.
 
         Args:
@@ -994,6 +1190,8 @@ class GymEnvSPaRC(gym.Env):
                 return False
 
         return True
+
+    # ---------- Visualization Functions ----------
 
     def render(self):
         """
@@ -1039,5 +1237,5 @@ class GymEnvSPaRC(gym.Env):
             self.llm_renderer.close()
             self.llm_renderer = None
 
-                
-                
+
+    # ---------- End Visualization Functions ----------
