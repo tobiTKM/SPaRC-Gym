@@ -71,7 +71,7 @@ class GymEnvSPaRC(gym.Env):
         self.rule_status = {}
         
         # Process the puzzles to extract relevant information
-        self.puzzles = self.process_puzzles(self.puzzles)
+        self.puzzles = self._process_puzzles(self.puzzles)
         # Load the first puzzle
         self._load_puzzle(self.current_puzzle_index) 
 
@@ -165,7 +165,7 @@ class GymEnvSPaRC(gym.Env):
         self._agent_location = np.array([self.start_location[1], self.start_location[0]], dtype=np.int32)
         self._target_location = np.array([self.target_location[1], self.target_location[0]], dtype=np.int32)
 
-        self.validate_rules(terminated=False, truncated=False)
+        self._validate_rules(terminated=False, truncated=False)
         
         # Mark the starting location as visited and set the agent's and target's positions in the observation array
         self.obs_array['visited'][self._agent_location[0], self._agent_location[1]] = 1
@@ -202,7 +202,7 @@ class GymEnvSPaRC(gym.Env):
             Actions.down.value: np.array([1, 0]),
         }
     
-    def process_puzzles(self, df):
+    def _process_puzzles(self, df):
         """
         Processes a DataFrame of puzzles and returns a list of puzzle dictionaries.
 
@@ -407,8 +407,7 @@ class GymEnvSPaRC(gym.Env):
 
     def _compute_regions(self):
         """
-        Flood-fill contiguous cell regions using the simplified mask.
-        Returns: list[RegionData], region_id_map (int array with -1 for non-cells)
+        Compute regions in the grid based on the observation layers.
         """
         mask = self._cell_index_grid()
         mask2 = self._cell_index_grid2()
@@ -441,13 +440,15 @@ class GymEnvSPaRC(gym.Env):
         return regions, region_map
     
     def _collect_region_symbols(self, regions, region_map):
+        """
+        Collect symbols for each region based on the observation layers.
+        """
 
         if not regions:
             return
 
         # Build fast lookup
         regions_by_id = {r.id: r for r in regions}
-        h, w = region_map.shape
 
         skip_layers = {'visited', 'gaps', 'agent_location', 'target_location'}
         for layer, arr in self.obs_array.items():
@@ -471,18 +472,30 @@ class GymEnvSPaRC(gym.Env):
     # ---------- Rule Check Functions ----------
     
     def _rule_reached_target(self):
+        '''
+        Checks:
+        The agent must reach the target location.
+        '''
         return bool(np.array_equal(self._agent_location, self._target_location)), {
             "agent_loc": self._agent_location.tolist(),
             "target_loc": self._target_location.tolist()
         }
 
     def _rule_path_not_crossing(self):
+        '''
+        Checks:
+        No path nodes should be crossed more than once.
+        '''
         path_nodes = [tuple(p[::-1]) for p in self.path]
         counts = Counter(path_nodes)
         dup = {k: v for k, v in counts.items() if v > 1}
         return len(dup) == 0, {"duplicates": dup}
 
     def _rule_no_gap_violations(self):
+        '''
+        Checks:
+        No gaps should be crossed by the agent's path.
+        '''
         gaps = self.obs_array['gaps']
         violations = []
         for (x, y) in self.path:
@@ -492,6 +505,10 @@ class GymEnvSPaRC(gym.Env):
         return len(violations) == 0, {"violations": violations}
 
     def _rule_all_dots_collected(self):
+        """
+        Checks:
+        All dots must be collected (visited) by the agent.
+        """
         if 'dot' not in self.obs_array:
             return True, {"total": 0, "collected": 0}
         dot_mask = self.obs_array['dot'] == 1
@@ -502,6 +519,7 @@ class GymEnvSPaRC(gym.Env):
 
     def _rule_color_square_separation(self, regions):
             """
+            Checks:
             All squares inside any single region must have same color;
             different colors must be separated by path -> no region with >1 square color.
             """
@@ -521,6 +539,7 @@ class GymEnvSPaRC(gym.Env):
 
     def _rule_star_pairing_exact(self, regions):
         """
+        Checks:
         Each star must share region with exactly one other same-color symbol.
         => For each region: for each star color, count must be 0 or 2 (not 1, not >2).
         """
@@ -583,6 +602,7 @@ class GymEnvSPaRC(gym.Env):
 
     def _rule_triangles_edges(self):
         """
+        Checks:
         For each triangle cell: required count == number of touched edges.
         """
         if 'triangle' not in self.obs_array:
@@ -702,7 +722,9 @@ class GymEnvSPaRC(gym.Env):
         return instances
     
     def _polyfit_region_exact(self, region, instances):
-        
+        '''
+        Helper function to check exact fit of polygons in a region.
+        '''
         H, W = self.y_size, self.x_size
 
         region_center_mask = np.zeros((H, W), dtype=bool)
@@ -756,6 +778,9 @@ class GymEnvSPaRC(gym.Env):
         }
         
     def _polyfit_place_ylops(self, ylops, idx, polys, grid, anchors):
+        '''
+        Helper function to place ylop shapes in the grid.
+        '''
 
         if idx == len(ylops):
             # hand over to poly placement (to be implemented next)
@@ -777,7 +802,9 @@ class GymEnvSPaRC(gym.Env):
         return False
 
     def _polyfit_place_polys(self, polys, grid):
-
+        '''
+        Helper function to place poly shapes in the grid.
+        '''
         if np.any(grid > 0):
             return False
 
@@ -813,6 +840,9 @@ class GymEnvSPaRC(gym.Env):
 
 
     def _get_offsets(self, shape_arr):
+        '''
+        Helper function to get the offsets of a shape array.
+        '''
         shape = np.array(shape_arr, dtype=np.int32)
         ys, xs = np.where(shape == 1)
         if len(ys) == 0:
@@ -828,6 +858,9 @@ class GymEnvSPaRC(gym.Env):
 
 
     def _try_place_polys(self, grid, offsets, anchor_x, anchor_y, sign):
+        '''
+        Helper function to try placing polygons in the grid.
+        '''
         H, W = grid.shape
         targets = []
         for dx, dy in offsets:
@@ -840,6 +873,9 @@ class GymEnvSPaRC(gym.Env):
         return True
     
     def _unplace_offsets(self, grid, offsets, anchor_x, anchor_y, sign):
+        '''
+        Helper function to unplace shapes from the grid.
+        '''
         for dx, dy in offsets:
             tx, ty = anchor_x + dx, anchor_y + dy
             grid[ty, tx] -= sign
@@ -849,6 +885,9 @@ class GymEnvSPaRC(gym.Env):
     # ---------- Validate Rules Functions ----------
 
     def _run_rule_validators(self, regions, terminated, truncated):
+        '''
+        Run all rule validators on the given regions.
+        '''
 
         rule_results = {}
 
@@ -886,15 +925,15 @@ class GymEnvSPaRC(gym.Env):
         return rule_results
 
     def _validate_rules(self, terminated=False, truncated=False):
+        '''
+        Validate the rules for the current puzzle state.
+        '''
         regions, region_map = self._compute_regions()
         self._collect_region_symbols(regions, region_map)
         self.rule_status = self._run_rule_validators(regions, terminated, truncated)
         # Attach region summaries
         self.rule_status["_regions"] = {r.id: r.to_summary() for r in regions}
         return self.rule_status
-
-    def validate_rules(self, terminated=False, truncated=False):
-        return self._validate_rules(terminated=terminated, truncated=truncated)
 
     # ---------- End Validate Rules Functions ----------
 
@@ -951,13 +990,16 @@ class GymEnvSPaRC(gym.Env):
             - grid_x_size: The x size of the current puzzle
             - legal_actions: The legal actions for the current state of the agent
             - current_step: The current step of the agent
+            - agent_location: The current location of the agent
+            - rule_status: The current status of the rules
+            - Rewards: The current rewards
         '''
-        self.validate_rules(terminated=False, truncated=False)
+        self._validate_rules(terminated=False, truncated=False)
         info = {"solution_count": self.solution_count,
         "difficulty": self.difficulty,
         "grid_y_size": self.y_size,
         "grid_x_size": self.x_size,
-        "legal_actions": self.get_legal_actions(),
+        "legal_actions": self._get_legal_actions(),
         "current_step": self.current_step,
         "agent_location": self._agent_location,
         "rule_status": self.rule_status,
@@ -965,7 +1007,7 @@ class GymEnvSPaRC(gym.Env):
         }
         return info
     
-    def get_legal_actions(self):
+    def _get_legal_actions(self):
         '''
         Function to get the legal actions for the current state of the agent
         
@@ -1009,8 +1051,8 @@ class GymEnvSPaRC(gym.Env):
             Not used yet
         ----------
         Returns:
-        obs : dict; dictionary of 2D arrays
-            A dictionary containing the current observation of the puzzle
+        obs : depends on obs type given in gym.make()
+            The Observation of the current puzzle state
         info : dict
             A dictionary containing the extra information of the current puzzle
         '''
@@ -1049,8 +1091,8 @@ class GymEnvSPaRC(gym.Env):
             The action to take in the environment
         ----------
         Returns:
-        obs : dict; dictionary of 2D arrays
-            A dictionary containing the current observation of the puzzle
+        obs : depends on obs type given in gym.make()
+            The Observation of the current puzzle state
         reward : int
             The reward for taking the action
         terminated : bool
@@ -1066,7 +1108,7 @@ class GymEnvSPaRC(gym.Env):
         truncated = self.current_step >= self.max_steps
         
         # If the action is not in the legal actions, we do not move
-        if action in self.get_legal_actions():
+        if action in self._get_legal_actions():
             direction = self._action_to_direction[action]
             agent_location_temp = self._agent_location + direction
             
@@ -1124,7 +1166,7 @@ class GymEnvSPaRC(gym.Env):
         terminated = np.array_equal(self._agent_location, self._target_location)
         
         # If there are no legal actions left (for the next step), the episode is truncated
-        if self.get_legal_actions() == []:
+        if self._get_legal_actions() == []:
             truncated = True
         
         # Reward logic:
@@ -1151,7 +1193,7 @@ class GymEnvSPaRC(gym.Env):
 
         
         # Update the observation
-        self.validate_rules(terminated=terminated, truncated=truncated)
+        self._validate_rules(terminated=terminated, truncated=truncated)
         observation = self._get_obs()
         info = self._get_info()
 

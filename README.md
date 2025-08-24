@@ -1,41 +1,69 @@
-# Gym Environment for SpaRC Project
+# Gym Environment for SpaRC
 
 ----
 ## Description
 A custom Gymnasium environment for SPaRC. The Game and Dataset was develop by: https://sparc.gipplab.org/ . This project allows LLM agents and humans to interact/play the puzzles used in SPaRC. For how the puzzles work also look up https://sparc.gipplab.org/ .
 
-----
-## Arguments when creating the Gym Env:
+## Installation
 
-- **puzzles(pd.DataFrame)** The puzzles that should be used. The puzzles must come in the shape of https://sparc.gipplab.org/ . 
-- **render_mode(str)** Optional, If render_mode='human' the Gym Environment will visualize every step using `pygame`. If no argumentpassed: no render mode activated.
-- **traceback (bool)** When set to True it allows the Agent to move back on his path, if False it does not. If argument not passed: traceback=False. 
-- **max_steps(int)** Optional, the maximum amount of steps the Gym environment will runbefore it terminates. If no argument passed: max_steps=200.
+[📦 PyPI Package](https://pypi.org/project/Gym-Env-SPaRC/)
 
-----
-## Installation and Usage
-how to use:
-- **Either:**
-  - Run pip install Gym-Env-SPaRC
-  - import gymnasium_env_for_SPaRC (and gymnasium)
-  - make the gym using: env = gym.make("env-SPaRC-v0", puzzles=df, render_mode='human', traceback=False, max_steps=max_steps) (example)
-  - and use the gym to your liking, examples how to use are in Final_Product.py or llm_host.py
-- **or:**
-  - clone the repository
-  - install the dependecies
-  - Run Final_Product.py to play as a human or customize Final_Product.py or llm_host.py to your liking
+Install the package from PyPI:
 
-#### Packages with Versions:
-- gymnasium>=0.28.1
-- numpy>=1.26.4
-- pygame>=2.2.0
-- pyyaml>=5.1
-- pandas>=2.2.1
-- huggingface-hub>=0.15.0
-- fsspec>=2024.1.1
-- chardet>=5.2.0
+```bash
+pip install Gym-Env-SPaRC
+```
 
-----
+Or install from source:
+
+```bash
+git clone https://github.com/tobiTKM/Gym-Environment_for_SPaRC.git
+cd Gym-Environment_for_SPaRC
+pip install -e .
+```
+
+## Quick Start
+
+To create the Gym Environment:
+
+```python
+env = gym.make("env-SPaRC-v1", puzzles=df, render_mode='human', observation='new',traceback=True, max_steps=1000)
+```
+
+### Options
+
+| Option        | Default | Options                |Description                        |
+|:--------------|:-------:|:----------------------:|-----------------------------------|
+| puzzles       | required| pd.Dataframe           | Pandas DataFrame of SPaRC puzzles |
+| render_mode   |  None   | 'human', 'llm', or None| Which Visualization to use        |
+| observation   |  'new'  | 'new' or 'SPaRC'       | Which Observation type to use     |
+| traceback     |  False  | False or True          | Allow the agent to backtrack      |
+| max_steps     |  2000   | any int                | Maximum steps per episode         |
+
+
+## Core Functions
+
+```python
+env.reset() -> Observation, Info: dict
+```
+Resets the Environment, moves to the next puzzle. Returns the Initial Observation and Info.
+
+```python
+env.step(action: int(0-3)) -> observation, reward: int, terminated: bool, truncated: bool, info: dict
+```
+Moves the Environment one Step based on the Action. Returns the new Observation, Info, Reward and if the puzzle is finished.
+
+```python
+env.render()
+```
+Visualizes the Puzzle's current State
+
+```python
+env.close()
+```
+Close the environment and cleanup any resources.
+
+
 ## Environment Details
 
 #### Action Space
@@ -47,6 +75,8 @@ how to use:
     - **3**: Down
 
 #### Observation Space
+
+if Observation = 'new':
 
 - **Dict** A Dictionary of:
   - **base: Dict**: A dictionary of 2D arrays representing the puzzle state:
@@ -65,50 +95,47 @@ how to use:
     - ID of the polyshape
     - Count of the Triangles
 
+if Observation = 'SPaRC':
+
+- **Json String**
+Same Representation as in SPaRC https://github.com/lkaesberg/SPaRC .
+Json String Representation of a 2D array of the grid capturing all different properties as Symbols (Strings).
+
 
 #### Reward System
 
 - **Sparse Rewards**:
-  - **Outcome Reward**:
-    - `+1`: For solving the puzzle.
-    - `0`: For intermediate steps.
-    - `-1`: for Failing.
-  - **Normal Reward**:
-    - `+1`: For solving the puzzle.
-    - `-1`: For Failing.
-    - `+0.01`: For staying on a solution path on each step.
+  - `+1`: For solving the puzzle.
+  - `-1`: For Failing.
+  - `+0.01`: For staying on a solution path on each step.
 
-- **Note:** The Reward from the step function is the **Normal Reward**, **Outcome Reward** can be found in the Info if needed.
-
-
-## Visualization
-
-The environment uses `pygame` for rendering:
-
-- **Agent**: Blue square.
-- **Target**: Red square.
-- **Gaps**: Dark Green cells.
-- **Visited cells**: light Green cells.
-- **Unique Properties**:
-  - **Stars**: colored star.
-  - **Square**: colored square.
-  - **Triangles**: Colored triangles with counts.
-  - **Polyshapes**: Colored polygons.
-  - **Ylop**: Colored Polygons with marker ylop.
-  - **Dots**: Small black circles.
 
 ## Folder Structure
 
 - Gym-Environment_for_SPaRC/ # Custom environment implementation
-    - gymnasium_env/ # Core environment logic
+    - gymnasium_env_for_SPaRC/ # Core environment logic
         - init.py # Environment initialization 
         - gym_env_for_SPaRC.py # Core environment logic 
         - register_env.py # Environment registration 
+    - llm_testing/
+      - llm_host.py # Example script for using the gym with a llm 
+        - parse_logs.py # Script to filter out the results of the created logfiles from llm_host.py 
     - Final_Product.py # Main script for human interaction
-    - llm_host.py # Example script for using the gym with a llm
-    - human_play.py # Function for human play 
-    - parse_logs.py # Script to filter out the results of the created logfiles from llm_host.py 
-    - README.md # Project documentation
+    - human_play.py # Helper Function for human play 
+    - pyproject.toml
+    - LICENCE
+    - README.md
+
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit pull requests or open issues.
+
+
+## LICENSE
+
+This project is licensed under the MIT License - see the LICENCE file for details.
+
 
 ----
 
