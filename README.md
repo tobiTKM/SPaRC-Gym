@@ -27,6 +27,8 @@ pip install -e .
 To create the Gym Environment:
 
 ```python
+import gymnasium as gym
+import gymnasium_env_for_SPaRC
 env = gym.make("env-SPaRC-v1", puzzles=df, render_mode='human', observation='new',traceback=True, max_steps=1000)
 ```
 
