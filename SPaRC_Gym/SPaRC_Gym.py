@@ -40,7 +40,7 @@ class RegionData:
             "colors": self.colors
         }
 
-class GymEnvSPaRC(gym.Env):
+class SPaRC_Gym(gym.Env):
     metadata = {"render_modes": ["human", "llm"], "render_fps": 30}
     def __init__(self, puzzles=None, render_mode=None, observation='new', traceback=False, max_steps=2000):
         '''

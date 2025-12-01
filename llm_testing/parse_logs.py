@@ -25,12 +25,17 @@ def parse_log(path: Path):
         "difficulty": None,
         "comp_tokens": []
     }
+    
+    content = path.read_text(encoding="utf-8")
+    is_invalid_output = "aborted due to invalid output" in content
+    
     for line in path.read_text(encoding="utf-8").splitlines():
         for status, pat in PATTERNS.items():
             m = pat.search(line)
             if m:
+                final_status = "invalid_output" if is_invalid_output and status == "truncated" else status
                 result.update({
-                    "status": status,
+                    "status": final_status,
                     "steps": int(m.group("steps")),
                     "reward": float(m.group("reward")),
                     "difficulty": int(m.group("diff")),
@@ -104,10 +109,12 @@ if __name__ == "__main__":
     fails     = sum(1 for r in all_results if r.get("reward") == -1)
     truncated = counts.get("truncated", 0)
     terminated_count = counts.get("terminated", 0)
+    invalid_output_count = counts.get("invalid_output", 0) 
     win_pct  = wins  / total * 100 if total else 0.0
     fail_pct = fails / total * 100 if total else 0.0
     term_pct  = terminated_count / total * 100 if total else 0.0
     trunc_pct = truncated / total * 100 if total else 0.0
+    invalid_pct = invalid_output_count / total * 100 if total else 0.0
 
 
     summary = (
@@ -116,6 +123,7 @@ if __name__ == "__main__":
         f"fails: {fail_pct:.2f}% ({fails})\n"
         f"terminated runs:      {term_pct:.2f}% ({terminated_count})\n"
         f"truncated runs:       {trunc_pct:.2f}% ({truncated})\n"
+        f"invalid model output: {invalid_pct:.2f}% ({invalid_output_count})\n"
         f"average_completion_tokens_per_puzzle:\n"
         f"  avg={overall['avg']:.2f}, "
         f"med={overall['med']:.2f}, "
@@ -133,7 +141,7 @@ if __name__ == "__main__":
         f"max={sum_stats['max']}\n"
     )
 
-    with open("logfiles/summary.txt", "w", encoding="utf-8") as outf:
+    with open("logs_results/summary.txt", "w", encoding="utf-8") as outf:
         outf.write(summary)
         
     by_diff: dict[int, list[dict]] = defaultdict(list)
@@ -144,7 +152,7 @@ if __name__ == "__main__":
         by_diff[diff].append(rec)
 
     # write a per‐difficulty summary
-    with open("logfiles/summary_by_difficulty.txt", "w", encoding="utf-8") as outf:
+    with open("logs_results/summary_by_difficulty.txt", "w", encoding="utf-8") as outf:
         for diff in sorted(by_diff):
             group = by_diff[diff]
             total     = len(group)
@@ -154,10 +162,12 @@ if __name__ == "__main__":
             fails     = sum(1 for r in group if r.get("reward") == -1)
             terminated= counts.get("terminated", 0)
             truncated = counts.get("truncated", 0)
+            invalid_output = counts.get("invalid_output", 0)
             win_d_pct  = wins  / total * 100 if total else 0.0
             fail_d_pct = fails / total * 100 if total else 0.0
             term_d_pct  = terminated / total * 100 if total else 0.0
             trunc_d_pct = truncated / total * 100 if total else 0.0
+            invalid_d_pct = invalid_output / total * 100 if total else 0.0
             avgs_d = [r["ct_avg"] for r in group]
             meds_d = [r["ct_med"] for r in group]
             mins_d = [r["ct_min"] for r in group]
@@ -189,6 +199,7 @@ if __name__ == "__main__":
             outf.write(f"  fails:     {fail_d_pct:.2f}% ({fails})\n")
             outf.write(f"  terminated runs:     {term_d_pct:.2f}% ({terminated})\n")
             outf.write(f"  truncated runs:      {trunc_d_pct:.2f}% ({truncated})\n")
+            outf.write(f"  invalid model output: {invalid_d_pct:.2f}% ({invalid_output})\n") # Add to per-difficulty summary
             outf.write(
                 f"  average_completion_tokens_per_puzzle: "
                 f"avg={stats_d['avg']:.2f}, "
@@ -213,7 +224,7 @@ if __name__ == "__main__":
                         
     crashed = [r["puzzle"] for r in all_results if r.get("status") is None]
 
-    with open("logfiles/crashed_puzzles.txt", "w", encoding="utf-8") as f:
+    with open("logs_results/crashed_puzzles.txt", "w", encoding="utf-8") as f:
         f.write("Crashed puzzle indices (log file present but no result):\n")
         if crashed:
             f.write(", ".join(str(i) for i in crashed))

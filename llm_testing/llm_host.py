@@ -2,7 +2,7 @@ import json
 import gymnasium as gym
 from openai import OpenAI
 import pandas as pd
-import gymnasium_env_for_SPaRC
+import SPaRC_Gym
 from dotenv import load_dotenv
 import os
 import numpy as np   
@@ -13,8 +13,7 @@ import yaml
 import asyncio
 from tqdm import tqdm
 from datasets import load_dataset
-import pandas as pd
-
+import time
 
 load_dotenv()
 API_KEY = os.getenv("API_KEY")
@@ -36,14 +35,14 @@ def make_json_safe(obj, seen=None):
     return str(obj)
 
 async def run_episode(i):
-    env = gym.make("env-SPaRC-v1", puzzles=df, render_mode=None, traceback=True, max_steps=100)
+    env = gym.make("SPaRC-Gym", puzzles=df, render_mode=None, traceback=False, observation = 'SPaRC', max_steps=100)
 
     logger = logging.getLogger(f"episode_{i}")
     logger.setLevel(logging.INFO)
     for h in list(logger.handlers):
         logger.removeHandler(h)
 
-    fh = logging.FileHandler(f"logfiles_t/puzzle{i}.log", mode="w", encoding="utf-8")
+    fh = logging.FileHandler(f"logfiles_14B/puzzle{i}.log", mode="w", encoding="utf-8")
     fmt = logging.Formatter("%(asctime)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
     fh.setFormatter(fmt)
     logger.addHandler(fh)
@@ -67,19 +66,42 @@ async def run_episode(i):
     Core Concepts & Grid Basics:
     Grid Dimensions: You can find the puzzle grid size in the info 
     Path: The solution is a single, continuous line connecting adjacent nodes either horizontally or vertically.
-    Revisiting: You can traceback your path, but you MUST do so in the same way you came, without crossing over your own path. 
-    When tracing back, you can only move to the last cell you occupied, and then continue from there. Also when you trace back, the nodes you no longer use in your path are free to be used again.
+    Revisiting: You can not traceback your path. you can not visit a cell twice.
     Rule Cells: Cells containing rule symbols (squares, stars, etc.) have coordinates where both x and y are odd. 
     The path goes around these rule cells, never on them. They are also marked as gaps.
     Regions: The drawn path divides the grid cells into one or more distinct enclosed areas (regions). Many rules apply based on the contents of these regions.
+    Valid Path Cells: The path travels along the grid lines (edges between nodes). It can only occupy positions marked `+` or `.` in the grid layout (these correspond to positions with at least one even coordinate).
+    Rule Cells: Cells containing rule symbols (squares, stars, etc.) have coordinates where both `x` and `y` are odd. The path goes *around* these rule cells, never *on* them.
+    Regions: The drawn path divides the grid cells into one or more distinct enclosed areas (regions). Many rules apply based on the contents of these regions.
 
+
+    Symbol Legend (Grid Notation)
+    *   `S`: **Start Node** (Path begins here)
+    *   `E`: **End Node** (Path ends here)
+    *   `V`: **Visited Node** (Path has passed through this cell)
+    *   `L`: **Current Node** (Path is currently on this cell)
+    *   `+`: Valid cell for the path to occupy
+    *   `N`: Empty rule cell (no rule)
+    *   `G`: **Gap** (Path **CANNOT** cross this cell)
+    *   `.`: **Dot** (Path **MUST** pass through this cell)
+    *   `o-X`: **Square** of color X
+    *   `*-X`: **Star** of color X
+    *   `A-X`: **Triangle** (touch 1 edge)
+    *   `B-X`: **Triangle** (touch 2 edges)
+    *   `C-X`: **Triangle** (touch 3 edges)
+    *   `D-X`: **Triangle** (touch 4 edges)
+    *   `P-X-Y`: **Polyshape** (positive) of color X and shape ID Y
+    *   `Y-X-Y`: **Negative Polyshape** (ylop) of color X and shape ID Y
+        
+    **Color Codes:** R=Red, B=Blue, G=Green, Y=Yellow, W=White, O=Orange, P=Purple, K=Black
+    
+        
     Detailed Solving Rules:
     The drawn path must satisfy ALL applicable constraints:
 
     1.  Path Constraints:
         Path connects adjacent nodes (horizontal/vertical moves only).
-        Nodes CAN be revisited. But only if you trace back to the last cell you occupied(And from there again and again ...).
-        Otherwise you CANNOT cross your own path.
+        Nodes CAN NOT be revisited. You cannot visit a cell twice.
         Path MUST pass through all Dot cells.
         Path CANNOT pass through any Gap cells.
 
@@ -106,11 +128,8 @@ async def run_episode(i):
 
     At each turn you'll receive current Information as JSON.
     Observation: The current state of the grid, including the path and any rule cells.
-    The Observation is a dictionary of three elements:
-    base: dictionary of one-hot encoded 2D arrays of the grid, where a 1 indicates a cell is occupied by the key (eg. 'gap', 'dot', 'square', etc.).
-    color: 2D array of the grid marking the color of the property of each cell, where 0 indicates no color.
-    The colors are defined as follows: 1:red, 2:blue, 3:yellow, 4:green, 5:black, 6:purple, 7:orange, 8:white
-    additional_info: a 2D array of the grid containing additional information about the cells, such as the amount of edges for triangles, or the shape of polyshapes.
+    The Observation is a json string representation:
+    Example observation: [["+","+","+","+","+","G","V"],["+","N",".","*-K","+","N","V"],["V","V","V","V","V","V","V"],["L","N","+","*-K","+","N","+"],["+",".","+","+","+","+","+"]]
 
     Info: Additional information about the puzzle, including:
     solution_count: The number of valid solutions for the current puzzle.
@@ -121,6 +140,7 @@ async def run_episode(i):
     current_step: The current step number in the episode.
     agent_location: The current location of the agent in the grid.
     Rewards: A dictionary containing the normal reward and the outcome reward at the current step.
+    rule_status: A dictionary indicating the status of each rule type (e.g., whether all squares are correctly grouped by color).
 
     Reward: The current reward.
 
@@ -129,6 +149,7 @@ async def run_episode(i):
     where <digit> is exactly one of 0=right, 1=up, 2=left, 3=down.
     No other output beyond your reasoning and that Final line.
     """
+
     
     Keep_Turns = 4
     
@@ -138,12 +159,20 @@ async def run_episode(i):
         user_payload = json.dumps(make_json_safe({'obs':obs,'info':info,'reward':reward}))
         messages.append({"role":"user","content":user_payload})
 
-        response = await asyncio.to_thread(
-            client.chat.completions.create,
-            model="Qwen/Qwen3-32B",
-            messages=messages,
-            temperature=0.0
-        )
+    
+        MAX_RETRIES = 5
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                response = await asyncio.to_thread(
+                    client.chat.completions.create,
+                    model="Qwen/Qwen3-14B",
+                    messages=messages,
+                    temperature=0.0
+                )
+                break  # If successful, exit the retry loop
+            except Exception as e:
+                print(f"Error occurred: {e}, retrying ({attempt+1}/{MAX_RETRIES})...")
+                time.sleep(15)
 
         reply = response.choices[0].message.content.strip()
         last_line = reply.splitlines()[-1].strip()
@@ -152,8 +181,14 @@ async def run_episode(i):
             logger.error(
                         "Puzzle %d: invalid model output, no “Final: <0–3>” found – skipping.\n%s",
                         i+1, reply
-                    )
+            )
             logger.info("Puzzle %d aborted due to invalid output.", i+1)
+            logger.info("Puzzle %d difficulty: %d", i+1, info["difficulty"])
+            logger.info(
+            "Episode %d truncated after %d steps; final reward=%f ; difficulty=%d",
+            i+1, step+1, -1, info["difficulty"]
+            )
+            logger.info("Episode %d done", i+1)
             return  # bail out of this episode        
         action = int(m.group(1))
 

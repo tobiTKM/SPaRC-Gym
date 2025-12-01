@@ -1,4 +1,4 @@
-# Gym Environment for SpaRC
+# SPaRC-Gym
 
 ----
 ## Description

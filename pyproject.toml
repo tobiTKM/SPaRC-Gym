@@ -3,8 +3,8 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "Gym-Env-SPaRC"
-version = "0.1.8"
+name = "SPaRC-Gym"
+version = "0.1.9"
 description = ""
 readme = "README.md"
 license = { file = "LICENCE" }
@@ -22,13 +22,13 @@ dependencies = [
 ]
 
 [project.entry-points."gymnasium.envs"]
-env-SPaRC-v1 = "gymnasium_env_for_SPaRC.gym_env_for_SPaRC:GymEnvSPaRC"
+SPaRC-Gym = "SPaRC_Gym.SPaRC_Gym:SPaRC_Gym"
 
 [project.urls]
-Repository = "https://github.com/tobiTKM/Gym-Environment_for_SPaRC"
+Repository = "https://github.com/tobiTKM/SPaRC_Gym"
 
 [tool.hatch.build.targets.wheel]
-packages = ["gymnasium_env_for_SPaRC"]
+packages = ["SPaRC_Gym"]
 
 [tool.hatch.metadata]
 allow-direct-references = true
