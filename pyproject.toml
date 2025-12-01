@@ -25,7 +25,7 @@ dependencies = [
 SPaRC-Gym = "SPaRC_Gym.SPaRC_Gym:SPaRC_Gym"
 
 [project.urls]
-Repository = "https://github.com/tobiTKM/SPaRC_Gym"
+Repository = "https://github.com/tobiTKM/SPaRC-Gym"
 
 [tool.hatch.build.targets.wheel]
 packages = ["SPaRC_Gym"]
