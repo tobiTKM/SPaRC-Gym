@@ -6,19 +6,19 @@ A custom Gymnasium environment for SPaRC. The Game and Dataset was develop by: h
 
 ## Installation
 
-[📦 PyPI Package](https://pypi.org/project/Gym-Env-SPaRC/)
+[📦 PyPI Package](https://pypi.org/project/SPaRC-Gym/)
 
 Install the package from PyPI:
 
 ```bash
-pip install Gym-Env-SPaRC
+pip install SPaRC-Gym
 ```
 
 Or install from source:
 
 ```bash
-git clone https://github.com/tobiTKM/Gym-Environment_for_SPaRC.git
-cd Gym-Environment_for_SPaRC
+git clone https://github.com/tobiTKM/SPaRC-Gym.git
+cd SPaRC-Gym
 pip install -e .
 ```
 
@@ -28,8 +28,8 @@ To create the Gym Environment:
 
 ```python
 import gymnasium as gym
-import gymnasium_env_for_SPaRC
-env = gym.make("env-SPaRC-v1", puzzles=df, render_mode='human', observation='new',traceback=True, max_steps=1000)
+import SPaRC_Gym
+env = gym.make("SPaRc-Gym", puzzles=df, render_mode='human', observation='new',traceback=True, max_steps=1000)
 ```
 
 ### Options
@@ -114,14 +114,14 @@ Json String Representation of a 2D array of the grid capturing all different pro
 
 ## Folder Structure
 
-- Gym-Environment_for_SPaRC/ # Custom environment implementation
-    - gymnasium_env_for_SPaRC/ # Core environment logic
+- SPaRC-Gym/ # Custom environment implementation
+    - SPaRC_Gym/ # Core environment logic
         - init.py # Environment initialization 
-        - gym_env_for_SPaRC.py # Core environment logic 
+        - SPaRC_Gym.py # Core environment logic 
         - register_env.py # Environment registration 
     - llm_testing/
       - llm_host.py # Example script for using the gym with a llm 
-        - parse_logs.py # Script to filter out the results of the created logfiles from llm_host.py 
+      - parse_logs.py # Script to filter out the results of the created logfiles from llm_host.py 
     - Final_Product.py # Main script for human interaction
     - human_play.py # Helper Function for human play 
     - pyproject.toml
