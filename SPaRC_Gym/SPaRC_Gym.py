@@ -75,9 +75,7 @@ class SPaRC_Gym(gym.Env):
 
         # Load the puzzles
         ds = load_dataset(df_name, df_split, split=df_set)
-        print("Loaded dataset:", type(ds))
         df = ds.to_pandas()
-        print("Converted to DataFrame:", type(df))
         self.puzzles = df
         self.current_puzzle_index = 0
         self.current_step = 0

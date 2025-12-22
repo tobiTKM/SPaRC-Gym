@@ -2,8 +2,7 @@ import gymnasium as gym
 import pandas as pd
 import SPaRC_Gym
 from human_play import play_human
-
-''' 
+'''
 This script initializes the Gym environment and runs a sample episode.
 '''
 
@@ -12,8 +11,7 @@ env = gym.make("SPaRC-Gym", render_mode='human', observation='SPaRC', traceback=
 
 # If you want to play the game using human inputs, use the play_human function. 
 # render_mode can now be set to either 'human' or 'llm' and both will work.
-env.reset({'puzzle_id':'24e8876585456ee5'})
-#obs, reward, info = play_human(env, id='24e8876585456ee5')
+obs, reward, info = play_human(env, id='24e8876585456ee5')
 env.close()
 
 #print(f"Reward: {reward}, info: {info} , obs: {obs}" )

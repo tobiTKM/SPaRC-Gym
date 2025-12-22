@@ -1,11 +1,11 @@
 """
-This module initializes the Witness environment package.
+This module initializes the SPaRC environment package.
 
-It imports the `WitnessEnv` class and registers the environment for use with Gymnasium.
+It imports the `SPaRC_Gym` class and registers the environment for use with Gymnasium.
 
 Modules:
-    - gym_Witness: Contains the implementation of the Witness environment.
-    - register_env: Handles the registration of the Witness environment with Gymnasium.
+    - gym_SPaRC: Contains the implementation of the SPaRC environment.
+    - register_env: Handles the registration of the SPaRC environment with Gymnasium.
 """
 
 from .SPaRC_Gym import SPaRC_Gym
