@@ -85,6 +85,8 @@ class SPaRC_Gym(gym.Env):
         self.rule_status = {}
         
         # Process the puzzles to extract relevant information
+        if self.puzzles is None or isinstance(self.puzzles, Exception):
+            raise ValueError("No valid dataframe provided")
         self.puzzles = self._process_puzzles(self.puzzles)
         # Load the first puzzle
         self._load_puzzle(self.current_puzzle_index) 
@@ -228,9 +230,6 @@ class SPaRC_Gym(gym.Env):
         Returns:
             list: A list of dictionaries, each representing a processed puzzle.
         """
-        
-        if df is None or isinstance(df, Exception):
-            raise ValueError("No valid dataframe provided")
             
         puzzles = []
 
