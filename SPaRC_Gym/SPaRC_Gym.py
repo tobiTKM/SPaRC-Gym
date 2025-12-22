@@ -75,7 +75,9 @@ class SPaRC_Gym(gym.Env):
 
         # Load the puzzles
         ds = load_dataset(df_name, df_split, split=df_set)
+        print("Loaded dataset:", type(ds))
         df = ds.to_pandas()
+        print("Converted to DataFrame:", type(df))
         self.puzzles = df
         self.current_puzzle_index = 0
         self.current_step = 0
@@ -227,8 +229,8 @@ class SPaRC_Gym(gym.Env):
             list: A list of dictionaries, each representing a processed puzzle.
         """
         
-        if df is None:
-                raise ValueError("No dataframe provided")
+        if df is None or isinstance(df, Exception):
+            raise ValueError("No valid dataframe provided")
             
         puzzles = []
 
