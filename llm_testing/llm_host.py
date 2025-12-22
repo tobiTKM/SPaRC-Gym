@@ -35,7 +35,7 @@ def make_json_safe(obj, seen=None):
     return str(obj)
 
 async def run_episode(i):
-    env = gym.make("SPaRC-Gym", puzzles=df, render_mode=None, traceback=False, observation = 'SPaRC', max_steps=100)
+    env = gym.make("SPaRC-Gym", render_mode=None, traceback=False, observation = 'SPaRC', max_steps=100)
 
     logger = logging.getLogger(f"episode_{i}")
     logger.setLevel(logging.INFO)

@@ -29,14 +29,15 @@ To create the Gym Environment:
 ```python
 import gymnasium as gym
 import SPaRC_Gym
-env = gym.make("SPaRc-Gym", puzzles=df, render_mode='human', observation='new',traceback=True, max_steps=1000)
+env = gym.make("SPaRc-Gym", df_name='lkaesberg/SPaRC', df_split='all', df_set='test', render_mode='human', observation='new',traceback=True, max_steps=1000)
 ```
 
 ### Options
 
+The Options df_name='lkaesberg/SPaRC', df_split='all', df_set='test' define which Dataset and splits will be used, any Dataset of the Structure 'lkaesberg/SPaRC' is viable.
+
 | Option        | Default | Options                |Description                        |
 |:--------------|:-------:|:----------------------:|-----------------------------------|
-| puzzles       | required| pd.Dataframe           | Pandas DataFrame of SPaRC puzzles |
 | render_mode   |  None   | 'human', 'llm', or None| Which Visualization to use        |
 | observation   |  'new'  | 'new' or 'SPaRC'       | Which Observation type to use     |
 | traceback     |  False  | False or True          | Allow the agent to backtrack      |
@@ -46,9 +47,10 @@ env = gym.make("SPaRc-Gym", puzzles=df, render_mode='human', observation='new',t
 ## Core Functions
 
 ```python
-env.reset() -> Observation, Info: dict
+env.reset(options{'puzzle_id': id}: 'String') -> Observation, Info: dict
 ```
 Resets the Environment, moves to the next puzzle. Returns the Initial Observation and Info.
+Can pass the Option to load a specific Puzzle with puzzle_id.
 
 ```python
 env.step(action: int(0-3)) -> observation, reward: int, terminated: bool, truncated: bool, info: dict

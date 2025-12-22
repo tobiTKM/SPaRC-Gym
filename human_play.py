@@ -1,6 +1,6 @@
 import pygame
 
-def play_human(env, i=1):
+def play_human(env, id=None):
     """
     Allows a human player to interact with the environment using keyboard inputs.
 
@@ -23,8 +23,10 @@ def play_human(env, i=1):
         - The environment is rendered after each step to visualize the current state.
     """
     
-    # Reset the environment i times before starting the game
-    for j in range(i):
+    if id is not None:
+        options = {'puzzle_id': id}
+        obs, info = env.reset(options=options)
+    else:
         obs, info = env.reset()
 
     running = True

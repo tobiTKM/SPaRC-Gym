@@ -2,23 +2,18 @@ import gymnasium as gym
 import pandas as pd
 import SPaRC_Gym
 from human_play import play_human
-from datasets import load_dataset
 
 ''' 
 This script initializes the Gym environment and runs a sample episode.
 '''
 
-# Load the dataset containing puzzles, here used is the SPaRC dataset.
-ds = load_dataset("lkaesberg/SPaRC", 'all', split="test")
-df = ds.to_pandas()
-
 # Initialize the Gym environment with the loaded puzzles
-env = gym.make("SPaRC-Gym", puzzles=df, render_mode='human', observation='SPaRC', traceback=True, max_steps=1000)
+env = gym.make("SPaRC-Gym", render_mode='human', observation='SPaRC', traceback=True, max_steps=1000)
 
 # If you want to play the game using human inputs, use the play_human function. 
 # render_mode can now be set to either 'human' or 'llm' and both will work.
 
-obs, reward, info = play_human(env)
+obs, reward, info = play_human(env, id='24e8876585456ee5')
 env.close()
 
 print(f"Reward: {reward}, info: {info} , obs: {obs}" )

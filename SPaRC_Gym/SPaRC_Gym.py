@@ -7,6 +7,7 @@ import numpy as np
 import yaml
 from dataclasses import dataclass
 from .render import HumanRenderer, LLMRenderer
+from datasets import load_dataset
 
 class Actions(Enum):
     """
@@ -42,14 +43,23 @@ class RegionData:
 
 class SPaRC_Gym(gym.Env):
     metadata = {"render_modes": ["human", "llm"], "render_fps": 30}
-    def __init__(self, puzzles=None, render_mode=None, observation='new', traceback=False, max_steps=2000):
-        '''
-        Function to initialize the Witness Environment, processes the puzzles dataset,
-        and loads the first puzzle from the dataset
+    def __init__(self, df_name='lkaesberg/SPaRC', df_split='all', df_set='test', render_mode=None, observation='new', traceback=False, max_steps=2000):
+        """
+        Initialize the SPaRC_Gym environment.
+
+        Loads the puzzle dataset, sets up rendering modes, and prepares the environment for agent interaction.
+
         Parameters:
-        puzzles : df
-        A pandas DataFrame containing the puzzles to be used in the environment.
-        '''
+            df_name (str): Name of the HuggingFace dataset to load (default: 'lkaesberg/SPaRC').
+            df_split (str): Dataset split to use (default: 'all').
+            df_set (str): Subset of the dataset for testing (default: 'test').
+            render_mode (str or None): Rendering mode, either 'human', 'llm', or None.
+            observation (str): Observation format, either 'new' (multi-array) or 'SPaRC' (JSON/text).
+            traceback (bool): If True, enables traceback.
+            max_steps (int): Maximum steps per episode before truncation.
+
+        Loads the puzzles, initializes renderers, sets up observation and action spaces, and loads the first puzzle.
+        """
         self.render_mode = render_mode
         self.observation = observation
         self.traceback = traceback
@@ -64,7 +74,9 @@ class SPaRC_Gym(gym.Env):
             self.llm_renderer = LLMRenderer()
 
         # Load the puzzles
-        self.puzzles = puzzles if puzzles is not None else ValueError("No puzzles provided")
+        ds = load_dataset(df_name, df_split, split=df_set)
+        df = ds.to_pandas()
+        self.puzzles = df
         self.current_puzzle_index = 0
         self.current_step = 0
         
@@ -347,6 +359,9 @@ class SPaRC_Gym(gym.Env):
             if self.observation == 'SPaRC':
                 observ = df['puzzle_array'][i]
                 puzzle.update({'observ': observ})
+
+            id = df['id'][i]
+            puzzle.update({'id': id})
 
             # Add the processed puzzle to the list
             puzzles.append(puzzle)
@@ -1048,7 +1063,7 @@ class SPaRC_Gym(gym.Env):
             The seed for the random number generator
         options : dict
             Additional options for resetting the environment
-            Not used yet
+            Only used option is 'puzzle_id' to load a specific puzzle by its ID
         ----------
         Returns:
         obs : depends on obs type given in gym.make()
@@ -1058,8 +1073,17 @@ class SPaRC_Gym(gym.Env):
         '''
         super().reset(seed=seed)
         
-        # Move to the next puzzle
-        self.current_puzzle_index = (self.current_puzzle_index + 1) % len(self.puzzles)
+        puzzle_id = None
+        if options is not None:
+            # If a specific puzzle ID is given, load that puzzle
+            puzzle_id = options.get('puzzle_id', None)
+            for idx, puzzle in enumerate(self.puzzles):
+                if puzzle['id'] == puzzle_id:
+                    self.current_puzzle_index = idx
+                    break
+        else:
+            # Move to the next puzzle
+            self.current_puzzle_index = (self.current_puzzle_index + 1) % len(self.puzzles)
         
         # Also possible to randomly select a puzzle
         # self.current_puzzle_index = np.random.randint(0, len(self.puzzles))
