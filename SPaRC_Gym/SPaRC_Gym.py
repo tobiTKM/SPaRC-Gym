@@ -1192,6 +1192,9 @@ class SPaRC_Gym(gym.Env):
         if self._get_legal_actions() == []:
             truncated = True
         
+        if terminated:
+            truncated = False  # If terminated, not truncated
+        
         # Reward logic:
         # Have an outcome reward and a normal reward
         # The normal reward is updated during the episode, the outcome reward is only updated at the end of the episode
