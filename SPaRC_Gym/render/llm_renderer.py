@@ -46,16 +46,16 @@ class LLMRenderer:
                 color = (200, 200, 200)  # Default: light gray
 
                 # Draw visited cells
-                if obs_array["visited"][y, x]:
+                if obs_array["visited"][x, y]:
                     color = (180, 255, 180) # Light green for visited cells, since they can not be visited again but are not gaps
                 # Draw gaps
-                if obs_array["gaps"][y, x]:
+                if obs_array["gaps"][x, y]:
                     color = (0, 128, 0) # dark Green for gaps
                 # Draw agent
-                if obs_array["agent_location"][y, x]:
+                if obs_array["agent_location"][x, y]:
                     color = (0, 0, 255) # Blue for agent
                 # Draw target
-                if obs_array["target_location"][y, x]:
+                if obs_array["target_location"][x, y]:
                     color = (255, 0, 0) # Red for target
 
                 pygame.draw.rect(self.screen, color, rect)
@@ -67,11 +67,11 @@ class LLMRenderer:
 
             for y in range(y_size):
                 for x in range(x_size):
-                    if array[y, x]:  # If the property exists at this cell
+                    if array[x, y]:  # If the property exists at this cell
                         center = (x * cell_size + cell_size // 2, y * cell_size + cell_size // 2)
 
                         prop_type = prop  # e.g., "star", "poly", "triangle", "dot"
-                        color = color_array[y, x]  # Get the color from the color array
+                        color = color_array[x, y]  # Get the color from the color array
                         color = self._get_color_from_name(color)  # Extract color
 
                         # Draw the property based on its type
@@ -81,7 +81,7 @@ class LLMRenderer:
                         
                         # Draw a polyshape
                         elif prop_type == "poly":
-                            shape = f'{additional_info[y, x] }' # Get the polyshape name from additional_info
+                            shape = f'{additional_info[x, y] }' # Get the polyshape name from additional_info
                             shape_array = polyshapes[shape]
                             top_left = (x * cell_size, y * cell_size)
                             self._draw_polyshape(self.screen, shape_array, top_left, cell_size, color)
@@ -99,7 +99,7 @@ class LLMRenderer:
                         
                         # Draw a polyshape with "ylop" type
                         elif prop_type == "ylop":
-                            shape = f'{additional_info[y, x]}'  # Get the polyshape name from additional_info
+                            shape = f'{additional_info[x, y]}'  # Get the polyshape name from additional_info
                             shape_array = polyshapes[shape]
                             top_left = (x * cell_size, y * cell_size)
                             self._draw_polyshape(self.screen, shape_array, top_left, cell_size, color)
@@ -124,7 +124,7 @@ class LLMRenderer:
                             ])
                             
                             # Add text for triangle count
-                            count = f'{additional_info[y, x]}'  # Get the count from additional_info 
+                            count = f'{additional_info[x, y]}'  # Get the count from additional_info 
                             font = pygame.font.Font(None, 28) 
                             text = font.render(count, True, (255, 255, 255)) 
                             shadow = font.render(count, True, (0, 0, 0))

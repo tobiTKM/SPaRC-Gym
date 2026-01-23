@@ -176,8 +176,8 @@ class SPaRC_Gym(gym.Env):
         
         self.rule_status = {}
         
-        self._agent_location = np.array([self.start_location[1], self.start_location[0]], dtype=np.int32)
-        self._target_location = np.array([self.target_location[1], self.target_location[0]], dtype=np.int32)
+        self._agent_location = np.array([self.start_location[0], self.start_location[1]], dtype=np.int32)
+        self._target_location = np.array([self.target_location[0], self.target_location[1]], dtype=np.int32)
 
         self._validate_rules(terminated=False, truncated=False)
         
@@ -190,9 +190,9 @@ class SPaRC_Gym(gym.Env):
         if self.observation == 'new':
             keys = list(self.obs_array.keys())
             self.observation_space = spaces.Dict({
-                'base': spaces.Dict({key: spaces.Box(low=0, high=1, shape=(self.y_size, self.x_size), dtype=np.int32) for key in keys}),
-                'color': spaces.Box(low=0, high=8, shape=(self.y_size, self.x_size), dtype=np.int32),
-                'additional_info': spaces.Box(low=0, high=143632, shape=(self.y_size, self.x_size), dtype=np.int64)
+                'base': spaces.Dict({key: spaces.Box(low=0, high=1, shape=(self.x_size, self.y_size), dtype=np.int32) for key in keys}),
+                'color': spaces.Box(low=0, high=8, shape=(self.x_size, self.y_size), dtype=np.int32),
+                'additional_info': spaces.Box(low=0, high=143632, shape=(self.x_size, self.y_size), dtype=np.int64)
             })
         
         elif self.observation == 'SPaRC':
@@ -210,10 +210,10 @@ class SPaRC_Gym(gym.Env):
         self.action_space = gym.spaces.Discrete(4)
         # Map actions to directions 
         self._action_to_direction = {
-            Actions.right.value: np.array([0, 1]),
-            Actions.up.value: np.array([-1, 0]),
-            Actions.left.value: np.array([0, -1]),
-            Actions.down.value: np.array([1, 0]),
+            Actions.right.value: np.array([1, 0]),
+            Actions.up.value: np.array([0, -1]),
+            Actions.left.value: np.array([-1, 0]),
+            Actions.down.value: np.array([0, 1]),
         }
     
     def _process_puzzles(self, df):
@@ -270,14 +270,14 @@ class SPaRC_Gym(gym.Env):
             
             # Initialize observation arrays
             obs_array = {
-                'visited': np.zeros((y_size, x_size), dtype=np.int32),
-                'gaps': np.zeros((y_size, x_size), dtype=np.int32),
-                'agent_location': np.zeros((y_size, x_size), dtype=np.int32),
-                'target_location': np.zeros((y_size, x_size), dtype=np.int32)
+                'visited': np.zeros((x_size, y_size), dtype=np.int32),
+                'gaps': np.zeros((x_size, y_size), dtype=np.int32),
+                'agent_location': np.zeros((x_size, y_size), dtype=np.int32),
+                'target_location': np.zeros((x_size, y_size), dtype=np.int32)
             }
             
-            color_array = np.zeros((y_size, x_size), dtype=np.int32)
-            additional_info = np.zeros((y_size, x_size), dtype=np.int64)
+            color_array = np.zeros((x_size, y_size), dtype=np.int32)
+            additional_info = np.zeros((x_size, y_size), dtype=np.int64)
             
             # Extract symbols, colors and additional info 
             for cell in text_yaml["puzzle"]["cells"]:
@@ -303,7 +303,7 @@ class SPaRC_Gym(gym.Env):
                         symbol = 'dot'
                     # Add new property to obs_array if not already present
                     if symbol not in obs_array:
-                        obs_array.update({symbol: np.zeros((y_size, x_size), dtype=np.int32)})
+                        obs_array.update({symbol: np.zeros((x_size, y_size), dtype=np.int32)})
                         
                     # Update the colors
                     if color:
@@ -312,17 +312,17 @@ class SPaRC_Gym(gym.Env):
                         x, y = position.get("x"), position.get("y")                  
                         for color_ in color_to_number:
                             if color_ == color:
-                                color_array[y][x] = color_to_number[color_]
+                                color_array[x][y] = color_to_number[color_]
                             
                     # update additional information
                     if count:
                         position = cell.get("position", {}) 
                         x, y = position.get("x"), position.get("y")  
-                        additional_info[y][x] = count
+                        additional_info[x][y] = count
                     elif shape:
                         position = cell.get("position", {}) 
                         x, y = position.get("x"), position.get("y")  
-                        additional_info[y][x] = shape
+                        additional_info[x][y] = shape
                     
             
             # Populate observation arrays
@@ -340,7 +340,7 @@ class SPaRC_Gym(gym.Env):
                         symbol = 'gaps'
                     # Update the corresponding observation array
                     if symbol in obs_array:
-                        obs_array[symbol][y, x] = 1
+                        obs_array[symbol][x, y] = 1
 
             x_size = x_size - 1
             y_size = y_size - 1
@@ -348,7 +348,7 @@ class SPaRC_Gym(gym.Env):
             for k in range(x_size):
                 for j in range(y_size):
                     if k % 2 == 1 and j % 2 == 1:
-                        obs_array['gaps'][j, k] = 1
+                        obs_array['gaps'][k, j] = 1
 
             puzzle.update({'obs_array': obs_array})
             puzzle.update({'color_array': color_array})
@@ -380,10 +380,10 @@ class SPaRC_Gym(gym.Env):
         visited = self.obs_array['visited']
         h, w = visited.shape
         mask = np.zeros((h, w), dtype=bool)
-        for y in range(h):
-            for x in range(w):
-                if y % 2 == 1 and x % 2 == 1:
-                    mask[y, x] = True
+        for x in range(h):
+            for y in range(w):
+                if x % 2 == 1 and y % 2 == 1:
+                    mask[x, y] = True
                     
         return mask
     
@@ -397,26 +397,26 @@ class SPaRC_Gym(gym.Env):
         gaps = self.obs_array['gaps']
         h, w = visited.shape
         mask = np.zeros((h, w), dtype=bool)
-        path_nodes = {tuple(p[::-1]) for p in self.path}
-        for y in range(h):
-            for x in range(w):
-                if gaps[y, x] == 1:
-                    mask[y, x] = True
+        path_nodes = {tuple(p) for p in self.path}
+        for x in range(h):
+            for y in range(w):
+                if gaps[x, y] == 1:
+                    mask[x, y] = True
                     
-        for y, x in path_nodes:
-            mask[y, x] = True
+        for x, y in path_nodes:
+            mask[x, y] = True
             
         return mask
     
-    def _neighbours_cell(self, y, x, h, w):
+    def _neighbours_cell(self, x, y, h, w):
         """
         Helper Function for _compute_regions
         Generate neighboring cell coordinates (1 unit away) in the grid.
         """
-        for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)):
-            ny, nx = y + dy, x + dx
-            if 0 <= ny < h and 0 <= nx < w:
-                yield ny, nx
+        for dx, dy in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < h and 0 <= ny < w:
+                yield nx, ny
     
 
     def _compute_regions(self):
@@ -430,24 +430,24 @@ class SPaRC_Gym(gym.Env):
         regions = []
         rid = 0
 
-        for y in range(h):
-            for x in range(w):
-                if mask[y, x] and region_map[y, x] == -1:
+        for x in range(h):
+            for y in range(w):
+                if mask[x, y] and region_map[x, y] == -1:
                     enqueued_non_cells = np.zeros((h, w), dtype=bool)
-                    q = deque([(y, x)])
-                    region_map[y, x] = rid
+                    q = deque([(x, y)])
+                    region_map[x, y] = rid
                     cells = []
                     while q:
-                        cy, cx = q.popleft()
-                        if mask[cy, cx]:
-                            cells.append((cy, cx))
-                        for ny, nx in self._neighbours_cell(cy, cx, h, w):
-                            if mask[ny, nx] and region_map[ny, nx] == -1:
-                                region_map[ny, nx] = rid
-                                q.append((ny, nx))
-                            if not mask2[ny, nx] and not enqueued_non_cells[ny, nx]:
-                                enqueued_non_cells[ny, nx] = True
-                                q.append((ny, nx))
+                        cx, cy = q.popleft()
+                        if mask[cx, cy]:
+                            cells.append((cx, cy))
+                        for nx, ny in self._neighbours_cell(cx, cy, h, w):
+                            if mask[nx, ny] and region_map[nx, ny] == -1:
+                                region_map[nx, ny] = rid
+                                q.append((nx, ny))
+                            if not mask2[nx, ny] and not enqueued_non_cells[nx, ny]:
+                                enqueued_non_cells[nx, ny] = True
+                                q.append((nx, ny))
                     regions.append(RegionData(id=rid, cells=cells, area=len(cells), symbols={}, colors={}))
                     rid += 1
                 
@@ -469,15 +469,15 @@ class SPaRC_Gym(gym.Env):
             if layer in skip_layers:
                 continue
             # Collect all coordinates where symbol appears
-            ys, xs = np.where(arr == 1)
-            for y, x in zip(ys, xs):
-                rid = region_map[y, x]
+            xs, ys = np.where(arr == 1)
+            for x, y in zip(xs, ys):
+                rid = region_map[x, y]
                 if rid == -1:
                     continue
                 reg = regions_by_id[rid]
-                reg.symbols.setdefault(layer, []).append((y, x))
+                reg.symbols.setdefault(layer, []).append((x, y))
                 # Color info (if available)
-                color_val = self.color_array[y, x]
+                color_val = self.color_array[x, y]
                 if color_val:
                     reg.colors[color_val] = reg.colors.get(color_val, 0) + 1
 
@@ -500,7 +500,7 @@ class SPaRC_Gym(gym.Env):
         Checks:
         No path nodes should be crossed more than once.
         '''
-        path_nodes = [tuple(p[::-1]) for p in self.path]
+        path_nodes = [tuple(p) for p in self.path]
         counts = Counter(path_nodes)
         dup = {k: v for k, v in counts.items() if v > 1}
         return len(dup) == 0, {"duplicates": dup}
@@ -513,8 +513,8 @@ class SPaRC_Gym(gym.Env):
         gaps = self.obs_array['gaps']
         violations = []
         for (x, y) in self.path:
-            gy, gx = y, x
-            if gaps[gy, gx] == 1:
+            gx, gy = x, y
+            if gaps[gx, gy] == 1:
                 violations.append((gx, gy))
         return len(violations) == 0, {"violations": violations}
 
@@ -545,7 +545,7 @@ class SPaRC_Gym(gym.Env):
                 squares = r.symbols.get('square', [])
                 if not squares:
                     continue
-                colors = set(self.color_array[y, x] for (y, x) in squares if self.color_array[y, x] != 0)
+                colors = set(self.color_array[x, y] for (x, y) in squares if self.color_array[x, y] != 0)
                 if len(colors) > 1:
                     bad.append(r.id)
                 details.append({"region": r.id, "square_count": len(squares), "colors": list(colors)})
@@ -568,15 +568,15 @@ class SPaRC_Gym(gym.Env):
             
             color_counts_all = {}
             for layer, coords in r.symbols.items():
-                for (y, x) in coords:
-                    c = self.color_array[y, x]
+                for (x, y) in coords:
+                    c = self.color_array[x, y]
                     if c == 0:
                         continue
                     color_counts_all[c] = color_counts_all.get(c, 0) + 1
 
             star_colors = {}
-            for (y, x) in star_coords:
-                c = self.color_array[y, x]
+            for (x, y) in star_coords:
+                c = self.color_array[x, y]
                 if c == 0:
                     violations.append({"region": r.id, "color": 0, "found_total": 1})
                     continue
@@ -624,24 +624,24 @@ class SPaRC_Gym(gym.Env):
         tri = self.obs_array['triangle']
         h, w = tri.shape
         mismatches = []
-        for y in range(1, h-1):
-            for x in range(1, w-1):
-                if tri[y, x] == 1:
-                    required = int(self.additional_info[y, x])
+        for x in range(1, h-1):
+            for y in range(1, w-1):
+                if tri[x, y] == 1:
+                    required = int(self.additional_info[x, y])
                     if required <= 0:
                         continue
-                    touches = self._triangle_touches(y, x)
+                    touches = self._triangle_touches(x, y)
                     if touches != required:
-                        mismatches.append({"y": y, "x": x, "required": required, "touches": touches})
+                        mismatches.append({"x": x, "y": y, "required": required, "touches": touches})
         return len(mismatches) == 0, {"mismatches": mismatches}
     
-    def _triangle_touches(self, tri_y, tri_x):
-        path_nodes = {(p[1], p[0]) for p in self.path}
+    def _triangle_touches(self, tri_x, tri_y):
+        path_nodes = {(p[0], p[1]) for p in self.path}
         neighbor_nodes = [
-            (tri_y, tri_x + 1),
-            (tri_y, tri_x - 1),
-            (tri_y - 1, tri_x),
-            (tri_y + 1, tri_x)
+            (tri_x + 1, tri_y),
+            (tri_x - 1, tri_y),
+            (tri_x, tri_y - 1),
+            (tri_x, tri_y + 1)
         ]
         return sum(1 for n in neighbor_nodes if n in path_nodes)
 
@@ -660,9 +660,9 @@ class SPaRC_Gym(gym.Env):
         _, region_map = self._compute_regions()
         by_region = {}
         for inst in instances:
-            y, x = inst["y"], inst["x"]
-            if 0 <= y < region_map.shape[0] and 0 <= x < region_map.shape[1]:
-                rid = region_map[y, x]
+            x, y = inst["x"], inst["y"]
+            if 0 <= x < region_map.shape[0] and 0 <= y < region_map.shape[1]:
+                rid = region_map[x, y]
                 if rid != -1:
                     by_region.setdefault(rid, []).append(inst)
 
@@ -722,28 +722,28 @@ class SPaRC_Gym(gym.Env):
         if not isinstance(self.polyshapes, dict):
             return instances
         h, w = self.additional_info.shape
-        for y in range(h):
-            for x in range(w):
-                val = self.additional_info[y, x]
+        for x in range(h):
+            for y in range(w):
+                val = self.additional_info[x, y]
                 if val != 0:
                     name = f'{val}'
                     if name not in self.polyshapes:
                         continue
                     shape_arr = np.array(self.polyshapes[name])
                     area = int(shape_arr.sum())
-                    kind = 'poly' if (self.obs_array['poly'][y, x] == 1) else 'ylop'
-                    instances.append({"name": name, "y": y, "x": x, "area": area, "kind": kind})
+                    kind = 'poly' if (self.obs_array['poly'][x, y] == 1) else 'ylop'
+                    instances.append({"name": name, "x": x, "y": y, "area": area, "kind": kind})
         return instances
     
     def _polyfit_region_exact(self, region, instances):
         '''
         Helper function to check exact fit of polygons in a region.
         '''
-        H, W = self.y_size, self.x_size
+        H, W = self.x_size, self.y_size
 
         region_center_mask = np.zeros((H, W), dtype=bool)
-        for (ry, rx) in region.cells:
-            region_center_mask[ry, rx] = True
+        for (rx, ry) in region.cells:
+            region_center_mask[rx, ry] = True
         region_size = int(region_center_mask[1::2, 1::2].sum())
 
         polys, ylops = [], []
@@ -779,7 +779,7 @@ class SPaRC_Gym(gym.Env):
         if net > 0:
             grid[region_center_mask] = -1
 
-        anchors_all = [(x, y) for y in range(1, H, 2) for x in range(1, W, 2)]
+        anchors_all = [(x, y) for x in range(1, H, 2) for y in range(1, W, 2)]
 
         ok = self._polyfit_place_ylops(ylops, 0, polys, grid, anchors_all)
 
@@ -828,7 +828,7 @@ class SPaRC_Gym(gym.Env):
         negs = np.argwhere((grid < 0))
         if negs.size == 0:
             return True
-        ny, nx = negs[np.lexsort((negs[:,1], negs[:,0]))][0]
+        nx, ny = negs[np.lexsort((negs[:,1], negs[:,0]))][0]
         target = [(int(nx), int(ny))]
 
         for (ax, ay) in target:
@@ -858,13 +858,13 @@ class SPaRC_Gym(gym.Env):
         Helper function to get the offsets of a shape array.
         '''
         shape = np.array(shape_arr, dtype=np.int32)
-        ys, xs = np.where(shape == 1)
-        if len(ys) == 0:
+        xs, ys = np.where(shape == 1)
+        if len(xs) == 0:
             return []
-        ay = ys.min()
-        ax = xs[np.where(ys == ay)[0]].min()
+        ax = xs.min()
+        ay = ys[np.where(xs == ax)[0]].min()
         offsets = []
-        for y, x in zip(ys, xs):
+        for x, y in zip(xs, ys):
             cx = 2 * (x - ax)
             cy = 2 * (y - ay)
             offsets.append((cx, cy))
@@ -879,11 +879,11 @@ class SPaRC_Gym(gym.Env):
         targets = []
         for dx, dy in offsets:
             tx, ty = anchor_x + dx, anchor_y + dy
-            if ty < 0 or ty >= H or tx < 0 or tx >= W:
+            if tx < 0 or tx >= H or ty < 0 or ty >= W:
                 return False
             targets.append((tx, ty))
         for tx, ty in targets:
-            grid[ty, tx] += sign
+            grid[tx, ty] += sign
         return True
     
     def _unplace_offsets(self, grid, offsets, anchor_x, anchor_y, sign):
@@ -892,7 +892,7 @@ class SPaRC_Gym(gym.Env):
         '''
         for dx, dy in offsets:
             tx, ty = anchor_x + dx, anchor_y + dy
-            grid[ty, tx] -= sign
+            grid[tx, ty] -= sign
     
     # ---------- End Poly/Ylop helpers ----------
     
@@ -1011,8 +1011,8 @@ class SPaRC_Gym(gym.Env):
         self._validate_rules(terminated=False, truncated=False)
         info = {"solution_count": self.solution_count,
         "difficulty": self.difficulty,
-        "grid_y_size": self.y_size,
         "grid_x_size": self.x_size,
+        "grid_y_size": self.y_size,
         "legal_actions": self._get_legal_actions(),
         "current_step": self.current_step,
         "agent_location": self._agent_location,
@@ -1034,13 +1034,13 @@ class SPaRC_Gym(gym.Env):
         for action, direction in self._action_to_direction.items():
             next_loc = self._agent_location + direction
             # np.clip to make sure we don't go out of bounds
-            agent_location_temp = np.clip(next_loc, [0, 0], [self.y_size - 1, self.x_size - 1])
+            agent_location_temp = np.clip(next_loc, [0, 0], [self.x_size - 1, self.y_size - 1])
             # Check if the next location is not a gap
             if self.obs_array['gaps'][agent_location_temp[0], agent_location_temp[1]] == 0:
                 if self.obs_array['visited'][agent_location_temp[0], agent_location_temp[1]] == 1:
                     if self.traceback:
                         if len(self.path) >= 2:
-                            last_loc = np.array([self.path[-2][1], self.path[-2][0]], dtype=np.int32)
+                            last_loc = np.array([self.path[-2][0], self.path[-2][1]], dtype=np.int32)
                             if np.array_equal(last_loc, agent_location_temp):
                                 if np.array_equal(next_loc, agent_location_temp): 
                                     legal.append(action)
@@ -1137,7 +1137,7 @@ class SPaRC_Gym(gym.Env):
             
             if self.obs_array['visited'][agent_location_temp[0], agent_location_temp[1]] == 1:
                 if self.traceback:
-                    last_loc = np.array([self.path[-2][1], self.path[-2][0]], dtype=np.int32)
+                    last_loc = np.array([self.path[-2][0], self.path[-2][1]], dtype=np.int32)
                     if np.array_equal(last_loc, agent_location_temp): 
                         # If the next location is already visited and is the last location, we are allowed to move back
                         self.obs_array['agent_location'][self._agent_location[0]][self._agent_location[1]] = 0
@@ -1146,7 +1146,7 @@ class SPaRC_Gym(gym.Env):
                         # Update the SPaRC observation if it is active
                         if self.observation == 'SPaRC':
                             r, c = self._agent_location[0], self._agent_location[1]
-                            self.observ[r][c] = '.' if self.obs_array['gaps'][r, c] == 1 else '+'                        
+                            self.observ[c][r] = '.' if self.obs_array['gaps'][r, c] == 1 else '+'                        
                         
                         self._agent_location = agent_location_temp
 
@@ -1157,7 +1157,7 @@ class SPaRC_Gym(gym.Env):
                         # Also update the SPaRC observation if it is active
                         if self.observation == 'SPaRC':
                             r, c = self._agent_location[0], self._agent_location[1]
-                            self.observ[r][c] = 'L'
+                            self.observ[c][r] = 'L'
 
                         # Update the path
                         del self.path[-1]
@@ -1167,7 +1167,7 @@ class SPaRC_Gym(gym.Env):
                 # Update the SPaRC observation if it is active
                 if self.observation == 'SPaRC':
                     r, c = self._agent_location[0], self._agent_location[1]
-                    self.observ[r][c] = 'V'
+                    self.observ[c][r] = 'V'
 
                 self._agent_location = agent_location_temp
                 
@@ -1178,10 +1178,10 @@ class SPaRC_Gym(gym.Env):
                 # Also update the SPaRC observation if it is active
                 if self.observation == 'SPaRC':
                     r, c = self._agent_location[0], self._agent_location[1]
-                    self.observ[r][c] = 'L'
+                    self.observ[c][r] = 'L'
 
                 # Update the path
-                path = [self._agent_location[1], self._agent_location[0]]
+                path = [self._agent_location[0], self._agent_location[1]]
                 self.path.append(path)
           
         

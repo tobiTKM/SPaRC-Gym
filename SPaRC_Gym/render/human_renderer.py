@@ -131,7 +131,7 @@ class HumanRenderer:
         agent_line_x, agent_line_y = None, None
         for y in range(y_size):
             for x in range(x_size):
-                if "agent_location" in obs_array and obs_array["agent_location"][y, x] == 1:
+                if "agent_location" in obs_array and obs_array["agent_location"][x, y] == 1:
                     agent_line_x, agent_line_y = x, y
                     break
         
@@ -144,7 +144,7 @@ class HumanRenderer:
         start_is_visited = False
         if "visited" in obs_array and start_line_x is not None and start_line_y is not None:
             if (0 <= start_line_y < y_size and 0 <= start_line_x < x_size and 
-                obs_array["visited"][start_line_y, start_line_x] == 1):
+                obs_array["visited"][start_line_x, start_line_y] == 1):
                 start_is_visited = True
         
         if start_is_visited:
@@ -184,7 +184,7 @@ class HumanRenderer:
         end_is_visited = False
         if "visited" in obs_array and end_line_x is not None and end_line_y is not None:
             if (0 <= end_line_y < y_size and 0 <= end_line_x < x_size and 
-                obs_array["visited"][end_line_y, end_line_x] == 1):
+                obs_array["visited"][end_line_x, end_line_y] == 1):
                 end_is_visited = True
         
         if end_is_visited:
@@ -206,13 +206,13 @@ class HumanRenderer:
 
             for y in range(y_size):
                 for x in range(x_size):
-                    if array[y, x]:  # If the property exists at this cell
+                    if array[x, y]:  # If the property exists at this cell
                         pixel_x = padding + x * cell_size//2
                         pixel_y = padding + y * cell_size//2
                         center = (pixel_x, pixel_y)
 
                         prop_type = prop  # e.g., "star", "poly", "triangle", "dot"
-                        color = color_array[y, x]  # Get the color from the color array
+                        color = color_array[x, y]  # Get the color from the color array
                         color = self._get_color_from_name(color)  # Extract color
 
                         # Draw the property based on its type
@@ -222,14 +222,14 @@ class HumanRenderer:
                         
                         # Draw a polyshape
                         elif prop_type == "poly":
-                            shape = f'{additional_info[y, x] }' # Get the polyshape name from additional_info
+                            shape = f'{additional_info[x, y] }' # Get the polyshape name from additional_info
                             shape_array = polyshapes[shape]
                             top_left = (pixel_x - cell_size//4, pixel_y - cell_size//4)
                             self._draw_polyshape(self.screen, shape_array, top_left, cell_size//2, color)
                         
                         # Draw a polyshape with "ylop" type
                         elif prop_type == "ylop":
-                            shape = f'{additional_info[y, x]}'  # Get the polyshape name from additional_info
+                            shape = f'{additional_info[x, y]}'  # Get the polyshape name from additional_info
                             shape_array = polyshapes[shape]
                             top_left = (pixel_x - cell_size//4, pixel_y - cell_size//4)
                             self._draw_polyshape(self.screen, shape_array, top_left, cell_size//2, color)
@@ -244,7 +244,7 @@ class HumanRenderer:
                             ])
                             
                             # Add text for triangle count
-                            count = f'{additional_info[y, x]}'  # Get the count from additional_info 
+                            count = f'{additional_info[x, y]}'  # Get the count from additional_info 
                             font = pygame.font.Font(None, int(16 * self.scale_factor)) 
                             text = font.render(count, True, (255, 255, 255)) 
                             shadow = font.render(count, True, (0, 0, 0))
@@ -398,14 +398,14 @@ class HumanRenderer:
         if "gaps" in obs_array:
             if is_vertical:
                 # For vertical lines, check all y positions at this x coordinate
-                for y in range(obs_array["gaps"].shape[0]):
-                    if obs_array["gaps"][y, line_coord] == 1:
+                for y in range(obs_array["gaps"].shape[1]):
+                    if obs_array["gaps"][line_coord, y] == 1:
                         gap_pixel_y = padding + y * cell_size // 2
                         gap_positions.append(gap_pixel_y)
             else:
                 # For horizontal lines, check all x positions at this y coordinate
-                for x in range(obs_array["gaps"].shape[1]):
-                    if obs_array["gaps"][line_coord, x] == 1:
+                for x in range(obs_array["gaps"].shape[0]):
+                    if obs_array["gaps"][x, line_coord] == 1:
                         gap_pixel_x = padding + x * cell_size // 2
                         gap_positions.append(gap_pixel_x)
         
