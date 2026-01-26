@@ -24,15 +24,40 @@ ds = load_dataset("lkaesberg/SPaRC", 'all', split="test")
 df = ds.to_pandas()
 
 def make_json_safe(obj, seen=None):
-    if seen is None: seen=set()
-    oid=id(obj)
-    if oid in seen: return None
+    if seen is None:
+        seen = set()
+    if obj is None or isinstance(obj, (bool, int, float, str)):
+        return obj
+    if isinstance(obj, np.generic):
+        return obj.item()
+    oid = id(obj)
+    if oid in seen:
+        return None
     seen.add(oid)
-    if isinstance(obj, np.ndarray): return obj.tolist()
-    if isinstance(obj, dict): return {k: make_json_safe(v,seen) for k,v in obj.items()}
-    if isinstance(obj,(list,tuple)): return [make_json_safe(v,seen) for v in obj]
-    if isinstance(obj,(int,float,str,bool)) or obj is None: return obj
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, dict):
+        safe = {}
+        for k, v in obj.items():
+            if isinstance(k, np.generic):
+                k = k.item()
+            elif not isinstance(k, (str, int, float, bool)) and k is not None:
+                k = str(k)
+            safe[k] = make_json_safe(v, seen)
+        return safe
+    if isinstance(obj, (list, tuple)):
+        return [make_json_safe(v, seen) for v in obj]
     return str(obj)
+
+def format_obs_for_prompt(obs):
+    if isinstance(obs, str):
+        try:
+            grid = json.loads(obs)
+            if isinstance(grid, list):
+                return "\n".join(str(row) for row in grid)
+        except json.JSONDecodeError:
+            pass
+    return obs
 
 async def run_episode(i):
     env = gym.make("SPaRC-Gym", render_mode=None, traceback=False, observation = 'SPaRC', max_steps=100)
@@ -155,7 +180,8 @@ async def run_episode(i):
     messages = [{"role":"system","content":system_prompt}]
 
     for step in range(101):
-        user_payload = json.dumps(make_json_safe({'obs':obs,'info':info,'reward':reward}))
+        formatted_obs = format_obs_for_prompt(obs)
+        user_payload = json.dumps(make_json_safe({'obs':formatted_obs,'info':info,'reward':reward}))
         messages.append({"role":"user","content":user_payload})
 
     
@@ -212,6 +238,7 @@ async def run_episode(i):
         
         if terminated or truncated:
             logger.info("Puzzle %d difficulty: %d", i+1, info["difficulty"])
+            env.close()
             break
         
     if terminated:

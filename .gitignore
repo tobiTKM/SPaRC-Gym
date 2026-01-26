@@ -6,3 +6,5 @@ logfiles/
 logfiles_t/
 results_cluster/
 llm_testing/alter_traceback_prompt.txt
+run_agent.py
+run-gym.sbatch
