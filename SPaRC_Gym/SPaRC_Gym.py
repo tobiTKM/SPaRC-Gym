@@ -1128,6 +1128,7 @@ class SPaRC_Gym(gym.Env):
         
         orig_loc = self._agent_location.copy()
         self.current_step += 1
+        self.normal_reward = 0
         truncated = self.current_step >= self.max_steps
         
         # If the action is not in the legal actions, we do not move
@@ -1214,8 +1215,10 @@ class SPaRC_Gym(gym.Env):
                 for i in range(self.solution_count):
                     current_solution_path = self.solution_paths[i]
                     if self._is_on_solution_path(self.path, current_solution_path):
-                        self.normal_reward += 0.01
+                        self.normal_reward = 0.01
                         break
+                    else:
+                        self.normal_reward = -0.01
 
         
         # Update the observation
