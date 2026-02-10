@@ -1081,8 +1081,10 @@ class SPaRC_Gym(gym.Env):
                     self.current_puzzle_index = idx
                     break
         else:
-            # Move to the next puzzle
-            self.current_puzzle_index = (self.current_puzzle_index + 1) % len(self.puzzles)
+            if seed is not None:
+                self.current_puzzle_index = int(self.np_random.integers(len(self.puzzles)))
+            else:
+                self.current_puzzle_index = (self.current_puzzle_index + 1) % len(self.puzzles)
         
         # Also possible to randomly select a puzzle
         # self.current_puzzle_index = np.random.randint(0, len(self.puzzles))
